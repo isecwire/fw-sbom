@@ -261,3 +261,215 @@ pub struct AnalysisStats {
     pub by_license: HashMap<String, usize>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json;
+
+    #[test]
+    fn component_creation_and_field_access() {
+        let c = Component {
+            name: "openssl".to_string(),
+            version: Some("3.1.0".to_string()),
+            sha256: "abc123".to_string(),
+            license: Some("Apache-2.0".to_string()),
+            purl: Some("pkg:generic/openssl@3.1.0".to_string()),
+            file_path: "usr/lib/libssl.so.3".to_string(),
+            detection_method: DetectionMethod::ElfDynamic,
+            confidence: 0.7,
+            cpe: None,
+            known_cves: None,
+        };
+
+        assert_eq!(c.name, "openssl");
+        assert_eq!(c.version.as_deref(), Some("3.1.0"));
+        assert_eq!(c.sha256, "abc123");
+        assert_eq!(c.license.as_deref(), Some("Apache-2.0"));
+        assert_eq!(c.purl.as_deref(), Some("pkg:generic/openssl@3.1.0"));
+        assert_eq!(c.file_path, "usr/lib/libssl.so.3");
+        assert_eq!(c.detection_method, DetectionMethod::ElfDynamic);
+        assert!((c.confidence - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn component_with_no_version() {
+        let c = Component {
+            name: "zlib".to_string(),
+            version: None,
+            sha256: "def456".to_string(),
+            license: None,
+            purl: Some("pkg:generic/zlib".to_string()),
+            file_path: "usr/lib/libz.so".to_string(),
+            detection_method: DetectionMethod::StringSignature,
+            confidence: 0.5,
+            cpe: None,
+            known_cves: None,
+        };
+
+        assert!(c.version.is_none());
+        assert!(c.license.is_none());
+        assert_eq!(c.detection_method, DetectionMethod::StringSignature);
+    }
+
+    #[test]
+    fn component_clone_is_independent() {
+        let c1 = Component {
+            name: "busybox".to_string(),
+            version: Some("1.36.1".to_string()),
+            sha256: "aaa".to_string(),
+            license: Some("GPL-2.0-only".to_string()),
+            purl: None,
+            file_path: "bin/busybox".to_string(),
+            detection_method: DetectionMethod::StringSignature,
+            confidence: 0.5,
+            cpe: None,
+            known_cves: None,
+        };
+        let mut c2 = c1.clone();
+        c2.name = "modified".to_string();
+        assert_eq!(c1.name, "busybox");
+        assert_eq!(c2.name, "modified");
+    }
+
+    #[test]
+    fn sbom_format_parse_spdx() {
+        let fmt: SbomFormat = "spdx".parse().unwrap();
+        assert_eq!(fmt, SbomFormat::Spdx);
+    }
+
+    #[test]
+    fn sbom_format_parse_spdx_case_insensitive() {
+        let fmt: SbomFormat = "SPDX".parse().unwrap();
+        assert_eq!(fmt, SbomFormat::Spdx);
+
+        let fmt: SbomFormat = "Spdx".parse().unwrap();
+        assert_eq!(fmt, SbomFormat::Spdx);
+    }
+
+    #[test]
+    fn sbom_format_parse_cyclonedx() {
+        let fmt: SbomFormat = "cyclonedx".parse().unwrap();
+        assert_eq!(fmt, SbomFormat::CycloneDx);
+    }
+
+    #[test]
+    fn sbom_format_parse_cyclonedx_case_insensitive() {
+        let fmt: SbomFormat = "CycloneDX".parse().unwrap();
+        assert_eq!(fmt, SbomFormat::CycloneDx);
+    }
+
+    #[test]
+    fn sbom_format_parse_unknown_returns_error() {
+        let result: Result<SbomFormat, String> = "xml".parse();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown SBOM format"));
+    }
+
+    #[test]
+    fn sbom_format_display() {
+        assert_eq!(format!("{}", SbomFormat::Spdx), "spdx");
+        assert_eq!(format!("{}", SbomFormat::CycloneDx), "cyclonedx");
+    }
+
+    #[test]
+    fn purl_with_version() {
+        let purl = "pkg:generic/openssl@3.1.0";
+        assert!(purl.starts_with("pkg:generic/"));
+        assert!(purl.contains('@'));
+        assert!(purl.ends_with("3.1.0"));
+    }
+
+    #[test]
+    fn purl_without_version() {
+        let purl = "pkg:generic/openssl";
+        assert!(purl.starts_with("pkg:generic/"));
+        assert!(!purl.contains('@'));
+    }
+
+    #[test]
+    fn detection_method_equality() {
+        assert_eq!(DetectionMethod::StringSignature, DetectionMethod::StringSignature);
+        assert_eq!(DetectionMethod::ElfDynamic, DetectionMethod::ElfDynamic);
+        assert_eq!(DetectionMethod::PackageManager, DetectionMethod::PackageManager);
+        assert_ne!(DetectionMethod::StringSignature, DetectionMethod::ElfDynamic);
+    }
+
+    #[test]
+    fn detection_method_display() {
+        assert_eq!(format!("{}", DetectionMethod::StringSignature), "string-signature");
+        assert_eq!(format!("{}", DetectionMethod::PackageManager), "package-manager");
+        assert_eq!(format!("{}", DetectionMethod::ElfDeep), "elf-deep");
+    }
+
+    #[test]
+    fn sbom_document_creation() {
+        let doc = SbomDocument {
+            name: "test-firmware".to_string(),
+            version: "1.0.0".to_string(),
+            created: "2026-01-01T00:00:00Z".to_string(),
+            tool: "fw-sbom 0.2.0".to_string(),
+            document_id: "test-uuid-1234".to_string(),
+            components: vec![],
+            distro_info: None,
+            dependency_edges: None,
+        };
+
+        assert_eq!(doc.name, "test-firmware");
+        assert_eq!(doc.version, "1.0.0");
+        assert!(doc.components.is_empty());
+    }
+
+    #[test]
+    fn component_serializes_to_json() {
+        let c = Component {
+            name: "curl".to_string(),
+            version: Some("8.0.0".to_string()),
+            sha256: "abcdef".to_string(),
+            license: Some("MIT".to_string()),
+            purl: Some("pkg:generic/curl@8.0.0".to_string()),
+            file_path: "usr/bin/curl".to_string(),
+            detection_method: DetectionMethod::StringSignature,
+            confidence: 0.5,
+            cpe: None,
+            known_cves: None,
+        };
+
+        let json_str = serde_json::to_string(&c).unwrap();
+        assert!(json_str.contains("\"name\":\"curl\""));
+        assert!(json_str.contains("\"version\":\"8.0.0\""));
+        assert!(json_str.contains("\"confidence\":0.5"));
+    }
+
+    #[test]
+    fn confidence_levels_are_ordered() {
+        let pkg = method_confidence(&DetectionMethod::PackageManager);
+        let elf_deep = method_confidence(&DetectionMethod::ElfDeep);
+        let elf_dyn = method_confidence(&DetectionMethod::ElfDynamic);
+        let sig = method_confidence(&DetectionMethod::StringSignature);
+
+        assert!(pkg > elf_deep);
+        assert!(elf_deep > sig);
+        assert!(elf_dyn > sig);
+    }
+
+    #[test]
+    fn sbom_diff_serializes() {
+        let diff = SbomDiff {
+            added: vec![DiffEntry {
+                name: "curl".to_string(),
+                version: Some("8.0.0".to_string()),
+                license: Some("MIT".to_string()),
+            }],
+            removed: vec![],
+            version_changed: vec![VersionChange {
+                name: "openssl".to_string(),
+                old_version: Some("3.0.0".to_string()),
+                new_version: Some("3.1.0".to_string()),
+            }],
+            unchanged_count: 5,
+        };
+        let json = serde_json::to_string(&diff).unwrap();
+        assert!(json.contains("curl"));
+        assert!(json.contains("openssl"));
+    }
+}
