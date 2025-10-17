@@ -117,3 +117,142 @@ fn spdx_package(c: &Component, idx: usize) -> Value {
 
     pkg
 }
+
+/// Generate CycloneDX 1.5 JSON.
+fn generate_cyclonedx(doc: &SbomDocument) -> Value {
+    let components: Vec<Value> = doc
+        .components
+        .iter()
+        .map(cyclonedx_component)
+        .collect();
+
+    json!({
+        "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.6",
+        "serialNumber": format!("urn:uuid:{}", doc.document_id),
+        "version": 1,
+        "metadata": {
+            "timestamp": doc.created,
+            "tools": {
+                "components": [
+                    {
+                        "type": "application",
+                        "name": "fw-sbom",
+                        "publisher": "isecwire GmbH",
+                        "version": env!("CARGO_PKG_VERSION")
+                    }
+                ]
+            },
+            "component": {
+                "type": "firmware",
+                "name": doc.name,
+                "version": doc.version
+            }
+        },
+        "components": components
+    })
+}
+
+/// Build a single CycloneDX component entry.
+fn cyclonedx_component(c: &Component) -> Value {
+    let comp_type = match c.detection_method {
+        DetectionMethod::ElfDynamic | DetectionMethod::ElfDeep => "library",
+        DetectionMethod::CryptoConstant => "library",
+        DetectionMethod::KernelConfig | DetectionMethod::FilesystemMeta => "framework",
+        _ => "library",
+    };
+
+    let mut comp = json!({
+        "type": comp_type,
+        "name": c.name,
+        "hashes": [
+            {
+                "alg": "SHA-256",
+                "content": c.sha256
+            }
+        ],
+        "evidence": {
+            "occurrences": [
+                {
+                    "location": c.file_path
+                }
+            ]
+        },
+        "properties": [
+            {
+                "name": "fw-sbom:confidence",
+                "value": format!("{:.2}", c.confidence)
+            },
+            {
+                "name": "fw-sbom:detection-method",
+                "value": format!("{}", c.detection_method)
+            }
+        ]
+    });
+
+    let obj = comp.as_object_mut().unwrap();
+
+    if let Some(ref version) = c.version {
+        obj.insert("version".to_string(), json!(version));
+    }
+
+    if let Some(ref purl) = c.purl {
+        obj.insert("purl".to_string(), json!(purl));
+        obj.insert("bom-ref".to_string(), json!(purl));
+    }
+
+    if let Some(ref cpe) = c.cpe {
+        obj.insert("cpe".to_string(), json!(cpe));
+    }
+
+    if let Some(ref license) = c.license {
+        obj.insert(
+            "licenses".to_string(),
+            json!([
+                {
+                    "license": {
+                        "id": license
+                    }
+                }
+            ]),
+        );
+    }
+
+    // Add vulnerability hints if present.
+    if let Some(ref cves) = c.known_cves {
+        let _vuln_refs: Vec<Value> = cves
+            .iter()
+            .map(|cve| {
+                json!({
+                    "id": cve,
+                    "source": {
+                        "name": "fw-sbom-hint",
+                        "url": format!("https://nvd.nist.gov/vuln/detail/{}", cve)
+                    }
+                })
+            })
+            .collect();
+
+        obj.insert(
+            "properties".to_string(),
+            json!([
+                {
+                    "name": "fw-sbom:confidence",
+                    "value": format!("{:.2}", c.confidence)
+                },
+                {
+                    "name": "fw-sbom:detection-method",
+                    "value": format!("{}", c.detection_method)
+                },
+                {
+                    "name": "fw-sbom:cve-hints",
+                    "value": cves.join(", ")
+                }
+            ]),
+        );
+    }
+
+    comp
+}
+
