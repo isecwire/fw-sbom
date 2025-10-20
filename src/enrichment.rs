@@ -161,3 +161,67 @@ pub fn enrich_components(components: &mut [Component]) {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lookup_cpe_openssl() {
+        let cpe = lookup_cpe("openssl", Some("3.1.0"));
+        assert_eq!(
+            cpe,
+            Some("cpe:2.3:a:openssl:openssl:3.1.0:*:*:*:*:*:*:*".to_string())
+        );
+    }
+
+    #[test]
+    fn lookup_cpe_without_version() {
+        let cpe = lookup_cpe("curl", None);
+        assert_eq!(
+            cpe,
+            Some("cpe:2.3:a:haxx:curl:*:*:*:*:*:*:*:*".to_string())
+        );
+    }
+
+    #[test]
+    fn lookup_cpe_unknown_package() {
+        assert!(lookup_cpe("unknown-pkg", None).is_none());
+    }
+
+    #[test]
+    fn get_cpe_entry_with_cves() {
+        let entry = get_cpe_entry("openssl").unwrap();
+        assert_eq!(entry.vendor, "openssl");
+        assert_eq!(entry.product, "openssl");
+        assert!(!entry.known_cves.is_empty());
+    }
+
+    #[test]
+    fn enrich_adds_cpe_and_cves() {
+        let mut components = vec![Component {
+            name: "openssl".to_string(),
+            version: Some("3.1.0".to_string()),
+            sha256: "abc".to_string(),
+            license: Some("Apache-2.0".to_string()),
+            purl: None,
+            file_path: String::new(),
+            detection_method: crate::models::DetectionMethod::StringSignature,
+            confidence: 0.5,
+            cpe: None,
+            known_cves: None,
+        }];
+
+        enrich_components(&mut components);
+
+        assert!(components[0].cpe.is_some());
+        assert!(components[0].cpe.as_ref().unwrap().contains("openssl"));
+        assert!(components[0].known_cves.is_some());
+        assert!(!components[0].known_cves.as_ref().unwrap().is_empty());
+    }
+
+    #[test]
+    fn lookup_cpe_case_insensitive() {
+        assert!(lookup_cpe("OpenSSL", Some("3.0")).is_some());
+        assert!(lookup_cpe("CURL", None).is_some());
+    }
+}
