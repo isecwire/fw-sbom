@@ -262,3 +262,72 @@ pub fn lookup_package_license(name: &str) -> Option<&'static str> {
         .map(|(_, lic)| *lic)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    #[test]
+    fn is_license_file_detects_common_names() {
+        assert!(is_license_file(Path::new("LICENSE")));
+        assert!(is_license_file(Path::new("COPYING")));
+        assert!(is_license_file(Path::new("LICENSE.txt")));
+        assert!(is_license_file(Path::new("/some/path/NOTICE")));
+        assert!(!is_license_file(Path::new("main.c")));
+    }
+
+    #[test]
+    fn extract_spdx_from_header() {
+        let content = "// SPDX-License-Identifier: MIT\n// Copyright 2024\n";
+        assert_eq!(extract_spdx_header(content), Some("MIT".to_string()));
+    }
+
+    #[test]
+    fn extract_spdx_apache() {
+        let content = "/* SPDX-License-Identifier: Apache-2.0 */\n";
+        assert_eq!(extract_spdx_header(content), Some("Apache-2.0".to_string()));
+    }
+
+    #[test]
+    fn extract_spdx_none_when_absent() {
+        let content = "// just a regular comment\nfn main() {}\n";
+        assert!(extract_spdx_header(content).is_none());
+    }
+
+    #[test]
+    fn lookup_known_packages() {
+        assert_eq!(lookup_package_license("openssl"), Some("Apache-2.0"));
+        assert_eq!(lookup_package_license("busybox"), Some("GPL-2.0-only"));
+        assert_eq!(lookup_package_license("mosquitto"), Some("EPL-2.0"));
+        assert!(lookup_package_license("unknown-pkg").is_none());
+    }
+
+    #[test]
+    fn detect_mit_license_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("LICENSE");
+        let mut f = fs::File::create(&path).unwrap();
+        f.write_all(b"MIT License\n\nPermission is hereby granted, free of charge...\n")
+            .unwrap();
+
+        let result = detect_license_in_file(&path, "LICENSE");
+        assert!(result.is_some());
+        let det = result.unwrap();
+        assert_eq!(det.spdx_id, "MIT");
+        assert!(det.confidence > 0.8);
+    }
+
+    #[test]
+    fn detect_apache_license_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("LICENSE");
+        let mut f = fs::File::create(&path).unwrap();
+        f.write_all(b"Apache License, Version 2.0\n\nTerms and Conditions...\n")
+            .unwrap();
+
+        let result = detect_license_in_file(&path, "LICENSE");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().spdx_id, "Apache-2.0");
+    }
+}
