@@ -625,3 +625,528 @@ impl FirmwareAnalyzer {
         })
     }
 
+    /// Compute SHA-256 of a file.
+    fn sha256_file(&self, path: &Path) -> Result<String> {
+        let mut file = fs::File::open(path).context("opening file for hashing")?;
+        let mut hasher = Sha256::new();
+        let mut buf = [0u8; 8192];
+        loop {
+            let n = file.read(&mut buf).context("reading file for hashing")?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+        Ok(format!("{:x}", hasher.finalize()))
+    }
+
+    /// Return a display-friendly relative path from the firmware root.
+    fn relative_path(&self, path: &Path) -> String {
+        path.strip_prefix(&self.root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .to_string()
+    }
+
+    /// Try to extract version strings near a signature match.
+    fn extract_version_near(data: &[u8], pos: usize) -> Option<String> {
+        // Look for a version pattern (digits.digits...) within 64 bytes after the match.
+        let start = pos;
+        let end = (pos + 128).min(data.len());
+        let window = &data[start..end];
+
+        // Find first digit sequence that looks like a version.
+        let mut i = 0;
+        while i < window.len() {
+            if window[i].is_ascii_digit() {
+                let ver_start = i;
+                // Consume digits, dots, hyphens, underscores (version chars).
+                while i < window.len()
+                    && (window[i].is_ascii_alphanumeric()
+                        || window[i] == b'.'
+                        || window[i] == b'-'
+                        || window[i] == b'_')
+                {
+                    i += 1;
+                }
+                let candidate = &window[ver_start..i];
+                // Must contain at least one dot and be reasonable length.
+                if candidate.contains(&b'.')
+                    && candidate.len() >= 3
+                    && candidate.len() <= 32
+                {
+                    if let Ok(s) = std::str::from_utf8(candidate) {
+                        // Trim trailing punctuation.
+                        let s = s.trim_end_matches(|c: char| !c.is_alphanumeric());
+                        if !s.is_empty() {
+                            return Some(s.to_string());
+                        }
+                    }
+                }
+            }
+            i += 1;
+        }
+        None
+    }
+
+    /// Scan file contents for known string signatures.
+    fn scan_signatures(
+        &self,
+        path: &Path,
+        hash: &str,
+        rel_path: &str,
+    ) -> Result<Option<Vec<Component>>> {
+        let data = match fs::read(path) {
+            Ok(d) => d,
+            Err(_) => return Ok(None),
+        };
+
+        let mut results = Vec::new();
+        let confidence = method_confidence(&DetectionMethod::StringSignature);
+
+        for sig in SIGNATURES {
+            let mut matched = false;
+            let mut version: Option<String> = None;
+
+            for needle in sig.needles {
+                if let Some(pos) = find_bytes(&data, needle) {
+                    matched = true;
+                    if version.is_none() {
+                        version = Self::extract_version_near(&data, pos);
+                    }
+                    break;
+                }
+            }
+
+            if matched {
+                let purl = make_purl(sig.name, version.as_deref());
+                results.push(Component {
+                    name: sig.name.to_string(),
+                    version,
+                    sha256: hash.to_string(),
+                    license: Some(sig.license.to_string()),
+                    purl: Some(purl),
+                    file_path: rel_path.to_string(),
+                    detection_method: DetectionMethod::StringSignature,
+                    confidence,
+                    cpe: None,
+                    known_cves: None,
+                });
+            }
+        }
+
+        if results.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(results))
+        }
+    }
+
+    /// Scan for crypto algorithm constants (AES S-box, SHA-256 constants).
+    fn scan_crypto_constants(
+        &self,
+        path: &Path,
+        hash: &str,
+        rel_path: &str,
+    ) -> Result<Option<Vec<Component>>> {
+        let data = match fs::read(path) {
+            Ok(d) => d,
+            Err(_) => return Ok(None),
+        };
+
+        let mut results = Vec::new();
+        let confidence = method_confidence(&DetectionMethod::CryptoConstant);
+
+        // Check for AES S-box.
+        if find_bytes(&data, AES_SBOX_PREFIX).is_some() {
+            results.push(Component {
+                name: "aes-implementation".to_string(),
+                version: None,
+                sha256: hash.to_string(),
+                license: None,
+                purl: Some("pkg:generic/aes-implementation".to_string()),
+                file_path: rel_path.to_string(),
+                detection_method: DetectionMethod::CryptoConstant,
+                confidence,
+                cpe: None,
+                known_cves: None,
+            });
+        }
+
+        // Check for SHA-256 constants.
+        if find_bytes(&data, SHA256_INIT).is_some()
+            || find_bytes(&data, SHA256_K_PREFIX).is_some()
+        {
+            results.push(Component {
+                name: "sha256-implementation".to_string(),
+                version: None,
+                sha256: hash.to_string(),
+                license: None,
+                purl: Some("pkg:generic/sha256-implementation".to_string()),
+                file_path: rel_path.to_string(),
+                detection_method: DetectionMethod::CryptoConstant,
+                confidence,
+                cpe: None,
+                known_cves: None,
+            });
+        }
+
+        if results.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(results))
+        }
+    }
+
+    /// Parse ELF files and extract dynamically linked libraries.
+    fn analyze_elf(
+        &self,
+        path: &Path,
+        hash: &str,
+        rel_path: &str,
+    ) -> Result<Option<Vec<Component>>> {
+        let file = match fs::File::open(path) {
+            Ok(f) => f,
+            Err(_) => return Ok(None),
+        };
+
+        let mmap = unsafe {
+            match Mmap::map(&file) {
+                Ok(m) => m,
+                Err(_) => return Ok(None),
+            }
+        };
+
+        // Quick ELF magic check.
+        if mmap.len() < 4 || &mmap[..4] != b"\x7fELF" {
+            return Ok(None);
+        }
+
+        let elf = match Elf::parse(&mmap) {
+            Ok(e) => e,
+            Err(_) => return Ok(None),
+        };
+
+        let mut results = Vec::new();
+        let confidence = method_confidence(&DetectionMethod::ElfDynamic);
+
+        // Extract needed shared libraries.
+        for lib in &elf.libraries {
+            if let Some((pkg_name, lic)) = known_library(lib) {
+                let purl = make_purl(pkg_name, None);
+                results.push(Component {
+                    name: pkg_name.to_string(),
+                    version: None,
+                    sha256: hash.to_string(),
+                    license: Some(lic.to_string()),
+                    purl: Some(purl),
+                    file_path: rel_path.to_string(),
+                    detection_method: DetectionMethod::ElfDynamic,
+                    confidence,
+                    cpe: None,
+                    known_cves: None,
+                });
+            }
+        }
+
+        if results.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(results))
+        }
+    }
+
+    /// Check for package manager metadata files (opkg status, dpkg status).
+    fn check_package_metadata(&self, path: &Path) -> Result<Option<Vec<Component>>> {
+        let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+        let parent = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|f| f.to_str())
+            .unwrap_or("");
+
+        // opkg: /usr/lib/opkg/status or /var/lib/opkg/status
+        // dpkg: /var/lib/dpkg/status
+        let is_opkg = parent == "opkg" && filename == "status";
+        let is_dpkg = parent == "dpkg" && filename == "status";
+
+        if !is_opkg && !is_dpkg {
+            return Ok(None);
+        }
+
+        let content = fs::read_to_string(path).context("reading package metadata")?;
+        let hash = self.sha256_file(path)?;
+        let rel_path = self.relative_path(path);
+        let mut results = Vec::new();
+        let confidence = method_confidence(&DetectionMethod::PackageManager);
+
+        // Both opkg and dpkg use a similar stanza format.
+        let mut current_name: Option<String> = None;
+        let mut current_version: Option<String> = None;
+        let mut current_license: Option<String> = None;
+
+        for line in content.lines() {
+            if line.is_empty() {
+                // End of stanza -- emit component.
+                if let Some(name) = current_name.take() {
+                    let version = current_version.take();
+                    let license = current_license.take().or_else(|| {
+                        license::lookup_package_license(&name).map(|s| s.to_string())
+                    });
+                    let purl = make_purl(&name, version.as_deref());
+                    results.push(Component {
+                        name: name.clone(),
+                        version,
+                        sha256: hash.clone(),
+                        license,
+                        purl: Some(purl),
+                        file_path: rel_path.clone(),
+                        detection_method: DetectionMethod::PackageManager,
+                        confidence,
+                        cpe: None,
+                        known_cves: None,
+                    });
+                }
+                continue;
+            }
+
+            if let Some(val) = line.strip_prefix("Package: ") {
+                current_name = Some(val.trim().to_string());
+            } else if let Some(val) = line.strip_prefix("Version: ") {
+                current_version = Some(val.trim().to_string());
+            } else if let Some(val) = line.strip_prefix("License: ") {
+                current_license = Some(val.trim().to_string());
+            }
+        }
+
+        // Handle last stanza without trailing newline.
+        if let Some(name) = current_name.take() {
+            let version = current_version.take();
+            let license = current_license.take().or_else(|| {
+                license::lookup_package_license(&name).map(|s| s.to_string())
+            });
+            let purl = make_purl(&name, version.as_deref());
+            results.push(Component {
+                name,
+                version,
+                sha256: hash.clone(),
+                license,
+                purl: Some(purl),
+                file_path: rel_path.clone(),
+                detection_method: DetectionMethod::PackageManager,
+                confidence,
+                cpe: None,
+                known_cves: None,
+            });
+        }
+
+        if results.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(results))
+        }
+    }
+
+    /// Check for opkg .control files in /usr/lib/opkg/info/*.control.
+    fn check_opkg_control(&self, path: &Path) -> Result<Option<Vec<Component>>> {
+        let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+        if !filename.ends_with(".control") {
+            return Ok(None);
+        }
+
+        // Check parent is "info" and grandparent is "opkg".
+        let parent = path.parent().and_then(|p| p.file_name()).and_then(|f| f.to_str()).unwrap_or("");
+        let grandparent = path.parent().and_then(|p| p.parent()).and_then(|p| p.file_name()).and_then(|f| f.to_str()).unwrap_or("");
+
+        if parent != "info" || grandparent != "opkg" {
+            return Ok(None);
+        }
+
+        let content = fs::read_to_string(path).context("reading opkg control file")?;
+        let hash = self.sha256_file(path)?;
+        let rel_path = self.relative_path(path);
+        let confidence = method_confidence(&DetectionMethod::PackageManager);
+
+        let mut name: Option<String> = None;
+        let mut version: Option<String> = None;
+        let mut lic: Option<String> = None;
+        let mut _description: Option<String> = None;
+
+        for line in content.lines() {
+            if let Some(val) = line.strip_prefix("Package: ") {
+                name = Some(val.trim().to_string());
+            } else if let Some(val) = line.strip_prefix("Version: ") {
+                version = Some(val.trim().to_string());
+            } else if let Some(val) = line.strip_prefix("License: ") {
+                lic = Some(val.trim().to_string());
+            } else if let Some(val) = line.strip_prefix("Description: ") {
+                _description = Some(val.trim().to_string());
+            }
+        }
+
+        if let Some(pkg_name) = name {
+            let license = lic.or_else(|| {
+                license::lookup_package_license(&pkg_name).map(|s| s.to_string())
+            });
+            let purl = make_purl(&pkg_name, version.as_deref());
+            Ok(Some(vec![Component {
+                name: pkg_name,
+                version,
+                sha256: hash,
+                license,
+                purl: Some(purl),
+                file_path: rel_path,
+                detection_method: DetectionMethod::PackageManager,
+                confidence,
+                cpe: None,
+                known_cves: None,
+            }]))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Check for distribution info files (os-release, openwrt_release).
+    fn check_distro_info(&self, path: &Path) -> Result<Option<DistroInfo>> {
+        let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+
+        if filename != "os-release" && filename != "openwrt_release" {
+            return Ok(None);
+        }
+
+        // Verify path looks right (under /etc).
+        let parent = path.parent().and_then(|p| p.file_name()).and_then(|f| f.to_str()).unwrap_or("");
+        if parent != "etc" {
+            return Ok(None);
+        }
+
+        let content = match fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => return Ok(None),
+        };
+
+        let mut info = DistroInfo {
+            id: None,
+            name: None,
+            version: None,
+            build_id: None,
+        };
+
+        for line in content.lines() {
+            let line = line.trim();
+            if let Some((key, value)) = line.split_once('=') {
+                let value = value.trim_matches('"').trim_matches('\'');
+                match key {
+                    "ID" | "DISTRIB_ID" => info.id = Some(value.to_string()),
+                    "NAME" | "DISTRIB_DESCRIPTION" => info.name = Some(value.to_string()),
+                    "VERSION_ID" | "DISTRIB_RELEASE" | "VERSION" => {
+                        info.version = Some(value.to_string())
+                    }
+                    "BUILD_ID" | "DISTRIB_REVISION" => info.build_id = Some(value.to_string()),
+                    _ => {}
+                }
+            }
+        }
+
+        if info.id.is_some() || info.name.is_some() {
+            Ok(Some(info))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Parse kernel config for security-relevant settings.
+    fn check_kernel_config(&self, path: &Path) -> Result<Option<KernelSecurityConfig>> {
+        let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+
+        // Check for /boot/config-* or /proc/config.gz (as extracted).
+        let is_kernel_config = filename.starts_with("config-")
+            && path.parent().and_then(|p| p.file_name()).and_then(|f| f.to_str()) == Some("boot");
+        let is_proc_config = filename == "config.gz"
+            && path.parent().and_then(|p| p.file_name()).and_then(|f| f.to_str()) == Some("proc");
+
+        // Also check for plain "config" under a kernel-related directory.
+        if !is_kernel_config && !is_proc_config {
+            return Ok(None);
+        }
+
+        // Read the config (skip compressed for now, focus on plaintext).
+        let content = match fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => return Ok(None),
+        };
+
+        // Verify it looks like a kernel config.
+        if !content.contains("CONFIG_") {
+            return Ok(None);
+        }
+
+        let mut config = KernelSecurityConfig {
+            stack_protector: None,
+            aslr: None,
+            selinux: None,
+            apparmor: None,
+            seccomp: None,
+            modules_disabled: None,
+            hardened_usercopy: None,
+            fortify_source: None,
+        };
+
+        for line in content.lines() {
+            let line = line.trim();
+            match line {
+                "CONFIG_STACKPROTECTOR=y" | "CONFIG_CC_STACKPROTECTOR=y" | "CONFIG_STACKPROTECTOR_STRONG=y" => {
+                    config.stack_protector = Some(true);
+                }
+                "# CONFIG_STACKPROTECTOR is not set" | "# CONFIG_CC_STACKPROTECTOR is not set" => {
+                    config.stack_protector = Some(false);
+                }
+                "CONFIG_RANDOMIZE_BASE=y" => {
+                    config.aslr = Some(true);
+                }
+                "# CONFIG_RANDOMIZE_BASE is not set" => {
+                    config.aslr = Some(false);
+                }
+                "CONFIG_SECURITY_SELINUX=y" => {
+                    config.selinux = Some(true);
+                }
+                "# CONFIG_SECURITY_SELINUX is not set" => {
+                    config.selinux = Some(false);
+                }
+                "CONFIG_SECURITY_APPARMOR=y" => {
+                    config.apparmor = Some(true);
+                }
+                "# CONFIG_SECURITY_APPARMOR is not set" => {
+                    config.apparmor = Some(false);
+                }
+                "CONFIG_SECCOMP=y" => {
+                    config.seccomp = Some(true);
+                }
+                "# CONFIG_SECCOMP is not set" => {
+                    config.seccomp = Some(false);
+                }
+                "CONFIG_MODULES=y" => {
+                    config.modules_disabled = Some(false);
+                }
+                "# CONFIG_MODULES is not set" => {
+                    config.modules_disabled = Some(true);
+                }
+                "CONFIG_HARDENED_USERCOPY=y" => {
+                    config.hardened_usercopy = Some(true);
+                }
+                "# CONFIG_HARDENED_USERCOPY is not set" => {
+                    config.hardened_usercopy = Some(false);
+                }
+                "CONFIG_FORTIFY_SOURCE=y" => {
+                    config.fortify_source = Some(true);
+                }
+                "# CONFIG_FORTIFY_SOURCE is not set" => {
+                    config.fortify_source = Some(false);
+                }
+                _ => {}
+            }
+        }
+
+        Ok(Some(config))
+    }
+}
