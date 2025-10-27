@@ -1150,3 +1150,502 @@ impl FirmwareAnalyzer {
         Ok(Some(config))
     }
 }
+
+/// Build a Package URL for a generic firmware package.
+fn make_purl(name: &str, version: Option<&str>) -> String {
+    match version {
+        Some(v) => format!("pkg:generic/{}@{}", name, v),
+        None => format!("pkg:generic/{}", name),
+    }
+}
+
+/// Naive byte-string search (returns first occurrence position).
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    haystack
+        .windows(needle.len())
+        .position(|w| w == needle)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    /// Helper to create a temp directory with a file containing given bytes.
+    fn temp_dir_with_file(filename: &str, contents: &[u8]) -> TempDir {
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let file_path = dir.path().join(filename);
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        let mut f = fs::File::create(&file_path).unwrap();
+        f.write_all(contents).unwrap();
+        dir
+    }
+
+    // ---- find_bytes tests ----
+
+    #[test]
+    fn find_bytes_finds_needle_at_start() {
+        let haystack = b"BusyBox v1.36.1";
+        let needle = b"BusyBox v";
+        assert_eq!(find_bytes(haystack, needle), Some(0));
+    }
+
+    #[test]
+    fn find_bytes_finds_needle_in_middle() {
+        let haystack = b"\x00\x00\x00openssl\x00\x00";
+        let needle = b"openssl";
+        assert_eq!(find_bytes(haystack, needle), Some(3));
+    }
+
+    #[test]
+    fn find_bytes_returns_none_when_absent() {
+        let haystack = b"nothing here";
+        let needle = b"BusyBox";
+        assert_eq!(find_bytes(haystack, needle), None);
+    }
+
+    #[test]
+    fn find_bytes_empty_needle_returns_none() {
+        let haystack = b"some data";
+        assert_eq!(find_bytes(haystack, b""), None);
+    }
+
+    #[test]
+    fn find_bytes_needle_longer_than_haystack_returns_none() {
+        let haystack = b"hi";
+        let needle = b"much longer needle";
+        assert_eq!(find_bytes(haystack, needle), None);
+    }
+
+    // ---- make_purl tests ----
+
+    #[test]
+    fn make_purl_with_version() {
+        assert_eq!(make_purl("openssl", Some("3.1.0")), "pkg:generic/openssl@3.1.0");
+    }
+
+    #[test]
+    fn make_purl_without_version() {
+        assert_eq!(make_purl("openssl", None), "pkg:generic/openssl");
+    }
+
+    // ---- extract_version_near tests ----
+
+    #[test]
+    fn extract_version_from_busybox_string() {
+        let data = b"BusyBox v1.36.1 (2024-01-15)";
+        let version = FirmwareAnalyzer::extract_version_near(data, 0);
+        assert_eq!(version, Some("1.36.1".to_string()));
+    }
+
+    #[test]
+    fn extract_version_from_uboot_string() {
+        let data = b"U-Boot 2023.10-rc3 (Sep 01 2023)";
+        let version = FirmwareAnalyzer::extract_version_near(data, 0);
+        assert_eq!(version, Some("2023.10-rc3".to_string()));
+    }
+
+    #[test]
+    fn extract_version_from_openssl_string() {
+        let data = b"OpenSSL 3.1.4 21 Nov 2023";
+        let version = FirmwareAnalyzer::extract_version_near(data, 0);
+        assert_eq!(version, Some("3.1.4".to_string()));
+    }
+
+    #[test]
+    fn extract_version_no_version_present() {
+        let data = b"just some text with no version numbers at all here";
+        let version = FirmwareAnalyzer::extract_version_near(data, 0);
+        assert!(version.is_none());
+    }
+
+    #[test]
+    fn extract_version_ignores_single_number_without_dot() {
+        let data = b"some text 42 end";
+        let version = FirmwareAnalyzer::extract_version_near(data, 0);
+        assert!(version.is_none());
+    }
+
+    #[test]
+    fn extract_version_linux_kernel() {
+        let data = b"Linux version 5.15.0-generic (gcc 12.2.0)";
+        let version = FirmwareAnalyzer::extract_version_near(data, 0);
+        assert_eq!(version, Some("5.15.0-generic".to_string()));
+    }
+
+    // ---- sha256_file tests ----
+
+    #[test]
+    fn sha256_of_known_content() {
+        let dir = temp_dir_with_file("test.bin", b"hello world");
+        let analyzer = FirmwareAnalyzer::new(dir.path());
+        let hash = analyzer.sha256_file(&dir.path().join("test.bin")).unwrap();
+        assert_eq!(
+            hash,
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        );
+    }
+
+    #[test]
+    fn sha256_of_empty_file() {
+        let dir = temp_dir_with_file("empty.bin", b"");
+        let analyzer = FirmwareAnalyzer::new(dir.path());
+        let hash = analyzer.sha256_file(&dir.path().join("empty.bin")).unwrap();
+        assert_eq!(
+            hash,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    // ---- scan_signatures tests ----
+
+    #[test]
+    fn scan_detects_busybox_signature() {
+        let dir = temp_dir_with_file("busybox", b"\x00\x00BusyBox v1.36.1 (2024-01-15)\x00\x00");
+        let analyzer = FirmwareAnalyzer::new(dir.path());
+        let hash = analyzer.sha256_file(&dir.path().join("busybox")).unwrap();
+        let result = analyzer
+            .scan_signatures(&dir.path().join("busybox"), &hash, "busybox")
+            .unwrap();
+
+        let components = result.expect("should detect busybox");
+        assert!(!components.is_empty());
+        let bb = components.iter().find(|c| c.name == "busybox").unwrap();
+        assert_eq!(bb.version.as_deref(), Some("1.36.1"));
+        assert_eq!(bb.license.as_deref(), Some("GPL-2.0-only"));
+        assert_eq!(bb.detection_method, DetectionMethod::StringSignature);
+        assert!(bb.purl.as_ref().unwrap().contains("busybox@1.36.1"));
+        assert!(bb.confidence > 0.0);
+    }
+
+    #[test]
+    fn scan_detects_openssl_signature() {
+        let dir = temp_dir_with_file("libssl.so", b"random bytes OpenSSL 3.1.4 more stuff");
+        let analyzer = FirmwareAnalyzer::new(dir.path());
+        let hash = analyzer.sha256_file(&dir.path().join("libssl.so")).unwrap();
+        let result = analyzer
+            .scan_signatures(&dir.path().join("libssl.so"), &hash, "libssl.so")
+            .unwrap();
+
+        let components = result.expect("should detect openssl");
+        let ossl = components.iter().find(|c| c.name == "openssl").unwrap();
+        assert_eq!(ossl.version.as_deref(), Some("3.1.4"));
+    }
+
+    #[test]
+    fn scan_detects_multiple_signatures_in_one_file() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"libcurl 8.4.0 something ");
+        data.extend_from_slice(b"zlib 1.3.1 deflate ");
+        let dir = temp_dir_with_file("multi.bin", &data);
+        let analyzer = FirmwareAnalyzer::new(dir.path());
+        let hash = analyzer.sha256_file(&dir.path().join("multi.bin")).unwrap();
+        let result = analyzer
+            .scan_signatures(&dir.path().join("multi.bin"), &hash, "multi.bin")
+            .unwrap();
+
+        let components = result.expect("should detect multiple components");
+        let names: Vec<&str> = components.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"curl"), "should detect curl, found: {:?}", names);
+        assert!(names.contains(&"zlib"), "should detect zlib, found: {:?}", names);
+    }
+
+    #[test]
+    fn scan_returns_none_for_file_without_signatures() {
+        let dir = temp_dir_with_file("random.bin", b"nothing recognizable at all in here xyz");
+        let analyzer = FirmwareAnalyzer::new(dir.path());
+        let hash = analyzer.sha256_file(&dir.path().join("random.bin")).unwrap();
+        let result = analyzer
+            .scan_signatures(&dir.path().join("random.bin"), &hash, "random.bin")
+            .unwrap();
+
+        assert!(result.is_none());
+    }
+
+    // ---- known_library tests ----
+
+    #[test]
+    fn known_library_recognizes_libssl() {
+        let result = known_library("libssl.so.3");
+        assert_eq!(result, Some(("openssl", "Apache-2.0")));
+    }
+
+    #[test]
+    fn known_library_recognizes_libz() {
+        let result = known_library("libz.so.1");
+        assert_eq!(result, Some(("zlib", "Zlib")));
+    }
+
+    #[test]
+    fn known_library_recognizes_libc() {
+        let result = known_library("libc.so.6");
+        assert_eq!(result, Some(("glibc", "LGPL-2.1-or-later")));
+    }
+
+    #[test]
+    fn known_library_returns_none_for_unknown() {
+        assert!(known_library("libfoo.so.1").is_none());
+    }
+
+    #[test]
+    fn known_library_recognizes_new_libs() {
+        assert!(known_library("libxml2.so.2").is_some());
+        assert!(known_library("libdbus-1.so.3").is_some());
+        assert!(known_library("libjansson.so.4").is_some());
+    }
+
+    // ---- deduplication tests ----
+
+    #[test]
+    fn analyze_deduplicates_same_component_different_files() {
+        let dir = TempDir::new().unwrap();
+        let data = b"\x00BusyBox v1.36.1\x00";
+
+        for name in &["bin/busybox", "sbin/busybox"] {
+            let path = dir.path().join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let mut f = fs::File::create(&path).unwrap();
+            f.write_all(data).unwrap();
+        }
+
+        let analyzer = FirmwareAnalyzer::new(dir.path());
+        let components = analyzer.analyze().unwrap();
+
+        let busybox_count = components
+            .iter()
+            .filter(|c| c.name == "busybox" && c.version.as_deref() == Some("1.36.1"))
+            .count();
+        assert_eq!(busybox_count, 1, "busybox should be deduplicated to one entry");
+    }
+
+    #[test]
+    fn analyze_keeps_different_versions_as_separate() {
+        let dir = TempDir::new().unwrap();
+
+        let data1 = b"\x00BusyBox v1.36.1\x00";
+        let data2 = b"\x00BusyBox v1.35.0\x00";
+
+        let path1 = dir.path().join("busybox1");
+        let path2 = dir.path().join("busybox2");
+
+        fs::File::create(&path1).unwrap().write_all(data1).unwrap();
+        fs::File::create(&path2).unwrap().write_all(data2).unwrap();
+
+        let analyzer = FirmwareAnalyzer::new(dir.path());
+        let components = analyzer.analyze().unwrap();
+
+        let busybox_versions: Vec<Option<&str>> = components
+            .iter()
+            .filter(|c| c.name == "busybox")
+            .map(|c| c.version.as_deref())
+            .collect();
+        assert!(busybox_versions.contains(&Some("1.36.1")));
+        assert!(busybox_versions.contains(&Some("1.35.0")));
+    }
+
+    #[test]
+    fn analyze_results_sorted_by_name() {
+        let dir = TempDir::new().unwrap();
+
+        let path_z = dir.path().join("libz.bin");
+        fs::File::create(&path_z).unwrap().write_all(b"\x00zlib 1.3.1 deflate \x00").unwrap();
+
+        let path_c = dir.path().join("curl.bin");
+        fs::File::create(&path_c).unwrap().write_all(b"\x00libcurl 8.4.0\x00").unwrap();
+
+        let analyzer = FirmwareAnalyzer::new(dir.path());
+        let components = analyzer.analyze().unwrap();
+
+        let names: Vec<&str> = components.iter().map(|c| c.name.as_str()).collect();
+        let mut sorted_names = names.clone();
+        sorted_names.sort();
+        assert_eq!(names, sorted_names, "components should be sorted by name");
+    }
+
+    // ---- package metadata tests ----
+
+    #[test]
+    fn check_opkg_status_file() {
+        let dir = TempDir::new().unwrap();
+        let opkg_dir = dir.path().join("var/lib/opkg");
+        fs::create_dir_all(&opkg_dir).unwrap();
+
+        let status_content = "\
+Package: busybox
+Version: 1.36.1-1
+License: GPL-2.0-only
+
+Package: dropbear
+Version: 2022.83-1
+License: MIT
+";
+        fs::write(opkg_dir.join("status"), status_content).unwrap();
+
+        let analyzer = FirmwareAnalyzer::new(dir.path());
+        let result = analyzer
+            .check_package_metadata(&opkg_dir.join("status"))
+            .unwrap();
+
+        let components = result.expect("should parse opkg status");
+        assert_eq!(components.len(), 2);
+
+        let bb = components.iter().find(|c| c.name == "busybox").unwrap();
+        assert_eq!(bb.version.as_deref(), Some("1.36.1-1"));
+        assert_eq!(bb.detection_method, DetectionMethod::PackageManager);
+        assert!(bb.confidence > 0.9);
+
+        let db = components.iter().find(|c| c.name == "dropbear").unwrap();
+        assert_eq!(db.version.as_deref(), Some("2022.83-1"));
+    }
+
+    #[test]
+    fn check_non_metadata_file_returns_none() {
+        let dir = temp_dir_with_file("random.txt", b"just text");
+        let analyzer = FirmwareAnalyzer::new(dir.path());
+        let result = analyzer
+            .check_package_metadata(&dir.path().join("random.txt"))
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    // ---- distro info tests ----
+
+    #[test]
+    fn check_os_release() {
+        let dir = TempDir::new().unwrap();
+        let etc_dir = dir.path().join("etc");
+        fs::create_dir_all(&etc_dir).unwrap();
+        fs::write(
+            etc_dir.join("os-release"),
+            "ID=openwrt\nNAME=\"OpenWrt\"\nVERSION_ID=\"23.05.0\"\nBUILD_ID=\"r23497\"\n",
+        )
+        .unwrap();
+
+        let analyzer = FirmwareAnalyzer::new(dir.path());
+        let info = analyzer
+            .check_distro_info(&etc_dir.join("os-release"))
+            .unwrap();
+
+        let info = info.expect("should detect distro info");
+        assert_eq!(info.id.as_deref(), Some("openwrt"));
+        assert_eq!(info.name.as_deref(), Some("OpenWrt"));
+        assert_eq!(info.version.as_deref(), Some("23.05.0"));
+    }
+
+    // ---- kernel config tests ----
+
+    #[test]
+    fn check_kernel_config_parses() {
+        let dir = TempDir::new().unwrap();
+        let boot_dir = dir.path().join("boot");
+        fs::create_dir_all(&boot_dir).unwrap();
+        fs::write(
+            boot_dir.join("config-5.15.0"),
+            "# Kernel config\nCONFIG_STACKPROTECTOR=y\nCONFIG_RANDOMIZE_BASE=y\n# CONFIG_SECURITY_SELINUX is not set\nCONFIG_SECCOMP=y\nCONFIG_MODULES=y\n",
+        )
+        .unwrap();
+
+        let analyzer = FirmwareAnalyzer::new(dir.path());
+        let config = analyzer
+            .check_kernel_config(&boot_dir.join("config-5.15.0"))
+            .unwrap();
+
+        let config = config.expect("should parse kernel config");
+        assert_eq!(config.stack_protector, Some(true));
+        assert_eq!(config.aslr, Some(true));
+        assert_eq!(config.selinux, Some(false));
+        assert_eq!(config.seccomp, Some(true));
+        assert_eq!(config.modules_disabled, Some(false));
+    }
+
+    // ---- exclude patterns test ----
+
+    #[test]
+    fn exclude_patterns_skip_files() {
+        let dir = TempDir::new().unwrap();
+
+        let path1 = dir.path().join("keep.bin");
+        fs::File::create(&path1).unwrap().write_all(b"\x00BusyBox v1.36.1\x00").unwrap();
+
+        let skip_dir = dir.path().join("skip_me");
+        fs::create_dir_all(&skip_dir).unwrap();
+        let path2 = skip_dir.join("hidden.bin");
+        fs::File::create(&path2).unwrap().write_all(b"\x00OpenSSL 3.1.4\x00").unwrap();
+
+        let analyzer = FirmwareAnalyzer::new(dir.path())
+            .with_excludes(vec!["skip_me".to_string()]);
+        let components = analyzer.analyze().unwrap();
+
+        let names: Vec<&str> = components.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"busybox"));
+        assert!(!names.contains(&"openssl"), "openssl should be excluded");
+    }
+
+    // ---- min confidence test ----
+
+    #[test]
+    fn min_confidence_filters_components() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("test.bin");
+        fs::File::create(&path).unwrap().write_all(b"\x00BusyBox v1.36.1\x00").unwrap();
+
+        // With high min confidence, string signatures should be filtered out.
+        let analyzer = FirmwareAnalyzer::new(dir.path())
+            .with_min_confidence(0.99);
+        let components = analyzer.analyze().unwrap();
+        assert!(components.is_empty(), "high confidence threshold should filter all string-signature results");
+    }
+
+    // ---- expanded signature tests ----
+
+    #[test]
+    fn scan_detects_mosquitto() {
+        let dir = temp_dir_with_file("mosquitto.bin", b"\x00mosquitto 2.0.18\x00");
+        let analyzer = FirmwareAnalyzer::new(dir.path());
+        let hash = analyzer.sha256_file(&dir.path().join("mosquitto.bin")).unwrap();
+        let result = analyzer
+            .scan_signatures(&dir.path().join("mosquitto.bin"), &hash, "mosquitto.bin")
+            .unwrap();
+        let components = result.expect("should detect mosquitto");
+        assert!(components.iter().any(|c| c.name == "mosquitto"));
+    }
+
+    #[test]
+    fn scan_detects_nginx() {
+        let dir = temp_dir_with_file("nginx.bin", b"\x00nginx/1.25.0\x00");
+        let analyzer = FirmwareAnalyzer::new(dir.path());
+        let hash = analyzer.sha256_file(&dir.path().join("nginx.bin")).unwrap();
+        let result = analyzer
+            .scan_signatures(&dir.path().join("nginx.bin"), &hash, "nginx.bin")
+            .unwrap();
+        let components = result.expect("should detect nginx");
+        assert!(components.iter().any(|c| c.name == "nginx"));
+    }
+
+    #[test]
+    fn scan_detects_systemd() {
+        let dir = temp_dir_with_file("systemd.bin", b"\x00systemd 255\x00");
+        let analyzer = FirmwareAnalyzer::new(dir.path());
+        let hash = analyzer.sha256_file(&dir.path().join("systemd.bin")).unwrap();
+        let result = analyzer
+            .scan_signatures(&dir.path().join("systemd.bin"), &hash, "systemd.bin")
+            .unwrap();
+        let components = result.expect("should detect systemd");
+        assert!(components.iter().any(|c| c.name == "systemd"));
+    }
+
+    #[test]
+    fn signature_count_above_50() {
+        assert!(
+            SIGNATURES.len() >= 50,
+            "should have at least 50 signatures, found {}",
+            SIGNATURES.len()
+        );
+    }
+}
