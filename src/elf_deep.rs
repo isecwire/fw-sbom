@@ -249,3 +249,45 @@ fn extract_version_from_comment(comment: &str) -> Option<String> {
     best
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_gcc_comment() {
+        let comp = parse_compiler_component(
+            "GCC: (Ubuntu 12.3.0-1ubuntu1~22.04) 12.3.0",
+            "bin/test",
+            "abc",
+        );
+        let comp = comp.unwrap();
+        assert_eq!(comp.name, "gcc");
+        assert_eq!(comp.version.as_deref(), Some("12.3.0"));
+        assert_eq!(comp.detection_method, DetectionMethod::ElfDeep);
+    }
+
+    #[test]
+    fn parse_clang_comment() {
+        let comp = parse_compiler_component(
+            "clang version 15.0.7 (Fedora 15.0.7-2.fc37)",
+            "bin/test",
+            "abc",
+        );
+        let comp = comp.unwrap();
+        assert_eq!(comp.name, "clang");
+        // Should pick up 15.0.7
+        assert!(comp.version.as_deref().unwrap().starts_with("15.0.7"));
+    }
+
+    #[test]
+    fn unknown_compiler_returns_none() {
+        let comp = parse_compiler_component("some random string", "bin/test", "abc");
+        assert!(comp.is_none());
+    }
+
+    #[test]
+    fn extract_version_from_gcc_string() {
+        let ver = extract_version_from_comment("GCC: (GNU) 13.2.0");
+        assert_eq!(ver, Some("13.2.0".to_string()));
+    }
+}
