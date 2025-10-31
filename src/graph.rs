@@ -144,3 +144,79 @@ fn short_label(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::DependencyEdge;
+
+    #[test]
+    fn generate_dot_produces_valid_structure() {
+        let edges = vec![
+            DependencyEdge {
+                binary_path: "usr/bin/curl".to_string(),
+                library: "libssl.so.3".to_string(),
+                soname: None,
+            },
+            DependencyEdge {
+                binary_path: "usr/bin/curl".to_string(),
+                library: "libz.so.1".to_string(),
+                soname: None,
+            },
+        ];
+
+        let dot = generate_dot_graph(&edges, "test-firmware");
+        assert!(dot.starts_with("digraph"));
+        assert!(dot.contains("usr/bin/curl"));
+        assert!(dot.contains("libssl.so.3"));
+        assert!(dot.contains("libz.so.1"));
+        assert!(dot.contains("->"));
+        assert!(dot.ends_with("}\n"));
+    }
+
+    #[test]
+    fn summarize_graph_counts() {
+        let edges = vec![
+            DependencyEdge {
+                binary_path: "bin/a".to_string(),
+                library: "libc.so.6".to_string(),
+                soname: None,
+            },
+            DependencyEdge {
+                binary_path: "bin/b".to_string(),
+                library: "libc.so.6".to_string(),
+                soname: None,
+            },
+            DependencyEdge {
+                binary_path: "bin/a".to_string(),
+                library: "libz.so.1".to_string(),
+                soname: None,
+            },
+        ];
+
+        let summary = summarize_graph(&edges);
+        assert!(summary.contains("2 binaries"));
+        assert!(summary.contains("2 unique libraries"));
+        assert!(summary.contains("3 edges"));
+        assert!(summary.contains("libc.so.6"));
+    }
+
+    #[test]
+    fn short_label_extracts_filename() {
+        assert_eq!(short_label("usr/bin/curl"), "curl");
+        assert_eq!(short_label("curl"), "curl");
+        assert_eq!(short_label("a/b/c/d"), "d");
+    }
+
+    #[test]
+    fn escape_dot_handles_special_chars() {
+        assert_eq!(escape_dot("hello\"world"), "hello\\\"world");
+        assert_eq!(escape_dot("path\\file"), "path\\\\file");
+    }
+
+    #[test]
+    fn empty_edges_produce_valid_graph() {
+        let dot = generate_dot_graph(&[], "empty");
+        assert!(dot.contains("digraph"));
+        assert!(dot.ends_with("}\n"));
+    }
+}
