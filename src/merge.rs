@@ -243,3 +243,137 @@ pub fn merge_sbom_files(
     sbom::generate(&doc, output_format)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_component(name: &str, version: Option<&str>, confidence: f64) -> Component {
+        Component {
+            name: name.to_string(),
+            version: version.map(|v| v.to_string()),
+            sha256: "abc".to_string(),
+            license: Some("MIT".to_string()),
+            purl: version.map(|v| format!("pkg:generic/{}@{}", name, v)),
+            file_path: String::new(),
+            detection_method: DetectionMethod::StringSignature,
+            confidence,
+            cpe: None,
+            known_cves: None,
+        }
+    }
+
+    #[test]
+    fn merge_deduplicates_by_name_version() {
+        let set1 = vec![
+            make_component("openssl", Some("3.1.0"), 0.5),
+            make_component("zlib", Some("1.3.1"), 0.5),
+        ];
+        let set2 = vec![
+            make_component("openssl", Some("3.1.0"), 0.7),
+            make_component("curl", Some("8.4.0"), 0.6),
+        ];
+
+        let merged = merge_components(vec![set1, set2]);
+        assert_eq!(merged.len(), 3);
+
+        let names: Vec<&str> = merged.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"openssl"));
+        assert!(names.contains(&"zlib"));
+        assert!(names.contains(&"curl"));
+
+        // The higher-confidence openssl entry should win.
+        let ossl = merged.iter().find(|c| c.name == "openssl").unwrap();
+        assert!((ossl.confidence - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn merge_keeps_different_versions_separate() {
+        let set1 = vec![make_component("openssl", Some("3.0.0"), 0.5)];
+        let set2 = vec![make_component("openssl", Some("3.1.0"), 0.5)];
+
+        let merged = merge_components(vec![set1, set2]);
+        assert_eq!(merged.len(), 2);
+    }
+
+    #[test]
+    fn merge_empty_sets() {
+        let merged = merge_components(vec![]);
+        assert!(merged.is_empty());
+    }
+
+    #[test]
+    fn merge_result_is_sorted() {
+        let set = vec![
+            make_component("zlib", Some("1.3"), 0.5),
+            make_component("aaa", Some("1.0"), 0.5),
+            make_component("curl", Some("8.0"), 0.5),
+        ];
+        let merged = merge_components(vec![set]);
+        let names: Vec<&str> = merged.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, vec!["aaa", "curl", "zlib"]);
+    }
+
+    #[test]
+    fn load_spdx_components_parses_packages() {
+        let spdx_json = serde_json::json!({
+            "spdxVersion": "SPDX-2.3",
+            "packages": [
+                {
+                    "name": "openssl",
+                    "versionInfo": "3.1.0",
+                    "licenseConcluded": "Apache-2.0",
+                    "checksums": [{"algorithm": "SHA256", "checksumValue": "abc123"}],
+                    "externalRefs": [{"referenceType": "purl", "referenceLocator": "pkg:generic/openssl@3.1.0"}]
+                }
+            ]
+        });
+
+        let components = load_spdx_components(&spdx_json).unwrap();
+        assert_eq!(components.len(), 1);
+        assert_eq!(components[0].name, "openssl");
+        assert_eq!(components[0].version.as_deref(), Some("3.1.0"));
+        assert_eq!(components[0].license.as_deref(), Some("Apache-2.0"));
+        assert_eq!(components[0].sha256, "abc123");
+    }
+
+    #[test]
+    fn load_cyclonedx_components_parses_components() {
+        let cdx_json = serde_json::json!({
+            "bomFormat": "CycloneDX",
+            "components": [
+                {
+                    "name": "curl",
+                    "version": "8.4.0",
+                    "purl": "pkg:generic/curl@8.4.0",
+                    "hashes": [{"alg": "SHA-256", "content": "def456"}],
+                    "licenses": [{"license": {"id": "MIT"}}]
+                }
+            ]
+        });
+
+        let components = load_cyclonedx_components(&cdx_json).unwrap();
+        assert_eq!(components.len(), 1);
+        assert_eq!(components[0].name, "curl");
+        assert_eq!(components[0].version.as_deref(), Some("8.4.0"));
+        assert_eq!(components[0].license.as_deref(), Some("MIT"));
+    }
+
+    #[test]
+    fn load_spdx_noassertion_becomes_none() {
+        let spdx_json = serde_json::json!({
+            "spdxVersion": "SPDX-2.3",
+            "packages": [
+                {
+                    "name": "unknown-pkg",
+                    "versionInfo": "NOASSERTION",
+                    "licenseConcluded": "NOASSERTION",
+                    "checksums": [],
+                }
+            ]
+        });
+
+        let components = load_spdx_components(&spdx_json).unwrap();
+        assert!(components[0].version.is_none());
+        assert!(components[0].license.is_none());
+    }
+}
