@@ -274,3 +274,122 @@ pub fn format_diff(diff: &SbomDiff) -> String {
     out
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{Component, DetectionMethod, SbomDocument};
+
+    fn make_component(name: &str, version: Option<&str>) -> Component {
+        Component {
+            name: name.to_string(),
+            version: version.map(|s| s.to_string()),
+            sha256: String::new(),
+            license: Some("MIT".to_string()),
+            purl: None,
+            file_path: String::new(),
+            detection_method: DetectionMethod::StringSignature,
+            confidence: 0.5,
+            cpe: None,
+            known_cves: None,
+        }
+    }
+
+    fn make_doc(components: Vec<Component>) -> SbomDocument {
+        SbomDocument {
+            name: "test".to_string(),
+            version: "1.0".to_string(),
+            created: String::new(),
+            tool: String::new(),
+            document_id: String::new(),
+            components,
+            distro_info: None,
+            dependency_edges: None,
+        }
+    }
+
+    #[test]
+    fn diff_detects_added_component() {
+        let old = make_doc(vec![make_component("curl", Some("8.0"))]);
+        let new = make_doc(vec![
+            make_component("curl", Some("8.0")),
+            make_component("zlib", Some("1.3")),
+        ]);
+
+        let diff = diff_sbom_documents(&old, &new);
+        assert_eq!(diff.added.len(), 1);
+        assert_eq!(diff.added[0].name, "zlib");
+        assert_eq!(diff.removed.len(), 0);
+        assert_eq!(diff.unchanged_count, 1);
+    }
+
+    #[test]
+    fn diff_detects_removed_component() {
+        let old = make_doc(vec![
+            make_component("curl", Some("8.0")),
+            make_component("zlib", Some("1.3")),
+        ]);
+        let new = make_doc(vec![make_component("curl", Some("8.0"))]);
+
+        let diff = diff_sbom_documents(&old, &new);
+        assert_eq!(diff.removed.len(), 1);
+        assert_eq!(diff.removed[0].name, "zlib");
+        assert_eq!(diff.added.len(), 0);
+    }
+
+    #[test]
+    fn diff_detects_version_change() {
+        let old = make_doc(vec![make_component("openssl", Some("3.0.0"))]);
+        let new = make_doc(vec![make_component("openssl", Some("3.1.0"))]);
+
+        let diff = diff_sbom_documents(&old, &new);
+        assert_eq!(diff.version_changed.len(), 1);
+        assert_eq!(diff.version_changed[0].name, "openssl");
+        assert_eq!(diff.version_changed[0].old_version.as_deref(), Some("3.0.0"));
+        assert_eq!(diff.version_changed[0].new_version.as_deref(), Some("3.1.0"));
+    }
+
+    #[test]
+    fn diff_identical_sboms() {
+        let old = make_doc(vec![
+            make_component("curl", Some("8.0")),
+            make_component("zlib", Some("1.3")),
+        ]);
+        let new = old.clone();
+
+        let diff = diff_sbom_documents(&old, &new);
+        assert_eq!(diff.added.len(), 0);
+        assert_eq!(diff.removed.len(), 0);
+        assert_eq!(diff.version_changed.len(), 0);
+        assert_eq!(diff.unchanged_count, 2);
+    }
+
+    #[test]
+    fn format_diff_output() {
+        let diff = SbomDiff {
+            added: vec![DiffEntry {
+                name: "nginx".to_string(),
+                version: Some("1.25.0".to_string()),
+                license: Some("BSD-2-Clause".to_string()),
+            }],
+            removed: vec![DiffEntry {
+                name: "lighttpd".to_string(),
+                version: Some("1.4.71".to_string()),
+                license: Some("BSD-3-Clause".to_string()),
+            }],
+            version_changed: vec![VersionChange {
+                name: "openssl".to_string(),
+                old_version: Some("3.0.0".to_string()),
+                new_version: Some("3.1.0".to_string()),
+            }],
+            unchanged_count: 5,
+        };
+
+        let output = format_diff(&diff);
+        assert!(output.contains("1 added"));
+        assert!(output.contains("1 removed"));
+        assert!(output.contains("1 version-changed"));
+        assert!(output.contains("+ nginx"));
+        assert!(output.contains("- lighttpd"));
+        assert!(output.contains("~ openssl"));
+    }
+}
