@@ -180,3 +180,123 @@ pub fn vex_output_path(sbom_path: &std::path::Path) -> std::path::PathBuf {
     parent.join(format!("{}.vex.json", clean_stem))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::DetectionMethod;
+
+    fn sample_component_with_cves() -> Component {
+        Component {
+            name: "openssl".to_string(),
+            version: Some("3.1.0".to_string()),
+            sha256: "abc123".to_string(),
+            license: Some("Apache-2.0".to_string()),
+            purl: Some("pkg:generic/openssl@3.1.0".to_string()),
+            file_path: "usr/lib/libssl.so.3".to_string(),
+            detection_method: DetectionMethod::ElfDynamic,
+            confidence: 0.7,
+            cpe: Some("cpe:2.3:a:openssl:openssl:3.1.0:*:*:*:*:*:*:*".to_string()),
+            known_cves: Some(vec![
+                "CVE-2024-5535".to_string(),
+                "CVE-2023-5678".to_string(),
+            ]),
+        }
+    }
+
+    fn sample_component_no_cves() -> Component {
+        Component {
+            name: "zlib".to_string(),
+            version: Some("1.3.1".to_string()),
+            sha256: "def456".to_string(),
+            license: Some("Zlib".to_string()),
+            purl: Some("pkg:generic/zlib@1.3.1".to_string()),
+            file_path: "usr/lib/libz.so.1".to_string(),
+            detection_method: DetectionMethod::ElfDynamic,
+            confidence: 0.7,
+            cpe: None,
+            known_cves: None,
+        }
+    }
+
+    #[test]
+    fn build_statements_from_component_with_cves() {
+        let comp = sample_component_with_cves();
+        let stmts = build_vex_statements(&[comp]);
+        assert_eq!(stmts.len(), 2);
+        assert_eq!(stmts[0].vulnerability_id, "CVE-2024-5535");
+        assert_eq!(stmts[0].status, VexStatus::UnderInvestigation);
+        assert_eq!(stmts[0].component_name, "openssl");
+        assert!(stmts[0].impact_statement.is_some());
+    }
+
+    #[test]
+    fn build_statements_skips_components_without_cves() {
+        let comp = sample_component_no_cves();
+        let stmts = build_vex_statements(&[comp]);
+        assert!(stmts.is_empty());
+    }
+
+    #[test]
+    fn generate_vex_document_has_required_fields() {
+        let comp = sample_component_with_cves();
+        let doc = generate_vex_document(&[comp], "test-sbom-id", "test-product");
+
+        assert_eq!(doc["@context"], "https://openvex.dev/ns/v0.2.0");
+        assert!(doc["@id"].as_str().unwrap().starts_with("urn:uuid:"));
+        assert_eq!(doc["author"], "fw-sbom");
+        assert_eq!(doc["version"], 1);
+        assert!(doc["statements"].is_array());
+        assert_eq!(doc["statements"].as_array().unwrap().len(), 2);
+        assert_eq!(doc["metadata"]["sbom_document_id"], "test-sbom-id");
+        assert_eq!(doc["metadata"]["product_name"], "test-product");
+    }
+
+    #[test]
+    fn vex_statement_contains_vulnerability_and_product() {
+        let comp = sample_component_with_cves();
+        let doc = generate_vex_document(&[comp], "sbom-1", "fw");
+        let stmt = &doc["statements"][0];
+
+        assert!(stmt["vulnerability"]["name"].as_str().unwrap().starts_with("CVE-"));
+        assert_eq!(stmt["products"][0]["identifiers"]["purl"], "pkg:generic/openssl@3.1.0");
+        assert_eq!(stmt["status"], "under_investigation");
+    }
+
+    #[test]
+    fn vex_output_path_derives_correctly() {
+        let sbom = std::path::Path::new("/tmp/firmware.spdx.json");
+        let vex = vex_output_path(sbom);
+        assert_eq!(vex, std::path::PathBuf::from("/tmp/firmware.vex.json"));
+    }
+
+    #[test]
+    fn vex_output_path_handles_cdx_suffix() {
+        let sbom = std::path::Path::new("/tmp/firmware.cdx.json");
+        let vex = vex_output_path(sbom);
+        assert_eq!(vex, std::path::PathBuf::from("/tmp/firmware.vex.json"));
+    }
+
+    #[test]
+    fn vex_output_path_handles_plain_json() {
+        let sbom = std::path::Path::new("/tmp/sbom.json");
+        let vex = vex_output_path(sbom);
+        assert_eq!(vex, std::path::PathBuf::from("/tmp/sbom.vex.json"));
+    }
+
+    #[test]
+    fn vex_status_display() {
+        assert_eq!(VexStatus::Affected.to_string(), "affected");
+        assert_eq!(VexStatus::NotAffected.to_string(), "not_affected");
+        assert_eq!(
+            VexStatus::UnderInvestigation.to_string(),
+            "under_investigation"
+        );
+        assert_eq!(VexStatus::Fixed.to_string(), "fixed");
+    }
+
+    #[test]
+    fn empty_components_produce_empty_statements() {
+        let doc = generate_vex_document(&[], "sbom-empty", "fw");
+        assert_eq!(doc["statements"].as_array().unwrap().len(), 0);
+    }
+}
