@@ -346,3 +346,50 @@ fn bool_cell(val: bool) -> Cell {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{Component, DetectionMethod};
+
+    fn make_component(name: &str, method: DetectionMethod, license: &str) -> Component {
+        Component {
+            name: name.to_string(),
+            version: Some("1.0".to_string()),
+            sha256: String::new(),
+            license: Some(license.to_string()),
+            purl: None,
+            file_path: String::new(),
+            detection_method: method,
+            confidence: 0.5,
+            cpe: None,
+            known_cves: None,
+        }
+    }
+
+    #[test]
+    fn compute_stats_counts_methods() {
+        let components = vec![
+            make_component("a", DetectionMethod::StringSignature, "MIT"),
+            make_component("b", DetectionMethod::StringSignature, "MIT"),
+            make_component("c", DetectionMethod::ElfDynamic, "Apache-2.0"),
+            make_component("d", DetectionMethod::PackageManager, "GPL-2.0-only"),
+        ];
+
+        let stats = compute_stats(&components, 3, 100);
+        assert_eq!(stats.files_scanned, 100);
+        assert_eq!(stats.elf_binaries, 3);
+        assert_eq!(stats.components_found, 4);
+        assert_eq!(stats.by_method.get("string-signature"), Some(&2));
+        assert_eq!(stats.by_method.get("elf-dynamic"), Some(&1));
+        assert_eq!(stats.by_method.get("package-manager"), Some(&1));
+        assert_eq!(stats.by_license.get("MIT"), Some(&2));
+    }
+
+    #[test]
+    fn compute_stats_empty() {
+        let stats = compute_stats(&[], 0, 0);
+        assert_eq!(stats.components_found, 0);
+        assert!(stats.by_method.is_empty());
+        assert!(stats.by_license.is_empty());
+    }
+}
