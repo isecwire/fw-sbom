@@ -1,15 +1,26 @@
 [package]
 name = "fw-sbom"
-version = "0.1.0"
+version = "1.1.0"
 edition = "2021"
-description = "Firmware SBOM generator and analyzer"
+description = "Firmware SBOM generator — extracts package info from firmware images and outputs SPDX/CycloneDX format"
 license = "MIT"
-authors = ["isecwire GmbH"]
+authors = ["isecwire GmbH <info@isecwire.com>"]
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+clap = { version = ">=4, <4.6", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+console = "0.15"
+goblin = "0.9"
+indicatif = "0.17"
+memmap2 = "0.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-anyhow = "1"
 sha2 = "0.10"
+comfy-table = "7"
+uuid = { version = "1", features = ["v4"] }
+rayon = "1.10"
 walkdir = "2"
+
+[dev-dependencies]
+tempfile = "3"
