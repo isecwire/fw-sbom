@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="650" viewBox="0 0 900 650" font-family="'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace">
+  <!-- Window chrome - macOS style -->
+  <rect width="900" height="650" rx="10" fill="#1e1e2e"/>
+  <rect width="900" height="38" rx="10" fill="#181825"/>
+  <rect x="0" y="28" width="900" height="10" fill="#181825"/>
+  <circle cx="20" cy="19" r="6" fill="#f38ba8"/>
+  <circle cx="40" cy="19" r="6" fill="#f9e2af"/>
+  <circle cx="60" cy="19" r="6" fill="#a6e3a1"/>
+  <text x="450" y="24" text-anchor="middle" font-size="12px" fill="#6c7086">fw-sbom -- /opt/firmware/gateway-v2.1/</text>
+
+  <!-- Thin border below title bar -->
+  <line x1="0" y1="38" x2="900" y2="38" stroke="#313244" stroke-width="1"/>
+
+  <!-- Terminal content -->
+  <g transform="translate(16, 58)" font-size="13px">
+
+    <!-- Header block -->
+    <text y="0" fill="#89b4fa" font-weight="700">  fw-sbom  Firmware SBOM Generator</text>
+    <text y="18"><tspan fill="#6c7086">  Version</tspan><tspan fill="#cdd6f4">  v1.1.0</tspan></text>
+    <text y="36"><tspan fill="#6c7086">  Product</tspan><tspan fill="#cdd6f4">  gateway-fw</tspan></text>
+    <text y="54"><tspan fill="#6c7086">  FW Ver </tspan><tspan fill="#cdd6f4">  2.1.0</tspan></text>
+    <text y="72"><tspan fill="#6c7086">  Input  </tspan><tspan fill="#cdd6f4">  /opt/firmware/gateway-v2.1/</tspan></text>
+    <text y="90" fill="#6c7086">  ---</text>
+
+    <!-- Spinner -->
+    <text y="114"><tspan fill="#89b4fa">&gt;&gt;&gt;</tspan><tspan fill="#cdd6f4"> Scanning firmware...</tspan></text>
+
+    <!-- Analysis complete -->
+    <text y="144"><tspan fill="#a6e3a1" font-weight="700">  Analysis complete.</tspan><tspan fill="#6c7086"> 1247 files scanned, 5 ELF binaries, 8 components found</tspan></text>
+
+    <!-- Component table with box-drawing -->
+    <text y="172" fill="#6c7086"> +-----------------+----------+------------+------------------+------------+</text>
+    <text y="188"><tspan fill="#6c7086"> |</tspan><tspan fill="#89b4fa"> Component       </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#89b4fa"> Version  </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#89b4fa"> License    </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#89b4fa"> Detection        </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#89b4fa"> Confidence </tspan><tspan fill="#6c7086">|</tspan></text>
+    <text y="204" fill="#6c7086"> +-----------------+----------+------------+------------------+------------+</text>
+    <text y="220"><tspan fill="#6c7086"> |</tspan><tspan fill="#cdd6f4"> busybox         </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> 1.36.1   </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> GPL-2.0    </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> string-signature </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1">        85% </tspan><tspan fill="#6c7086">|</tspan></text>
+    <text y="236"><tspan fill="#6c7086"> |</tspan><tspan fill="#cdd6f4"> openssl         </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> 3.1.4    </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> Apache-2.0 </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> string-signature </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1">        90% </tspan><tspan fill="#6c7086">|</tspan></text>
+    <text y="252"><tspan fill="#6c7086"> |</tspan><tspan fill="#cdd6f4"> linux-kernel    </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> 5.15.148 </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> GPL-2.0    </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> string-signature </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1">        95% </tspan><tspan fill="#6c7086">|</tspan></text>
+    <text y="268"><tspan fill="#6c7086"> |</tspan><tspan fill="#cdd6f4"> u-boot          </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> 2023.10  </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> GPL-2.0    </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> string-signature </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1">        80% </tspan><tspan fill="#6c7086">|</tspan></text>
+    <text y="284"><tspan fill="#6c7086"> |</tspan><tspan fill="#cdd6f4"> dropbear        </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> 2022.83  </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> MIT        </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> package-manager  </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1">        95% </tspan><tspan fill="#6c7086">|</tspan></text>
+    <text y="300"><tspan fill="#6c7086"> |</tspan><tspan fill="#cdd6f4"> mosquitto       </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> 2.0.18   </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> EPL-2.0    </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> package-manager  </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1">        95% </tspan><tspan fill="#6c7086">|</tspan></text>
+    <text y="316"><tspan fill="#6c7086"> |</tspan><tspan fill="#cdd6f4"> zlib            </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> 1.3      </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> Zlib       </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> elf-dynamic      </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#f9e2af">        70% </tspan><tspan fill="#6c7086">|</tspan></text>
+    <text y="332"><tspan fill="#6c7086"> |</tspan><tspan fill="#cdd6f4"> curl            </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> 8.5.0    </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> MIT        </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> string-signature </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1">        85% </tspan><tspan fill="#6c7086">|</tspan></text>
+    <text y="348" fill="#6c7086"> +-----------------+----------+------------+------------------+------------+</text>
+
+    <!-- Detection method breakdown -->
+    <text y="376" fill="#cdd6f4" font-weight="700">  Detection method breakdown:</text>
+    <text y="394" fill="#cdd6f4">    string-signature           4</text>
+    <text y="410" fill="#cdd6f4">    package-manager            2</text>
+    <text y="426" fill="#cdd6f4">    elf-dynamic                1</text>
+    <text y="442" fill="#cdd6f4">    filesystem-meta            1</text>
+
+    <!-- ELF security hardening -->
+    <text y="470" fill="#cdd6f4" font-weight="700">  ELF binary security hardening:</text>
+    <text y="488" fill="#6c7086"> +-----------+-----+-------+--------------+-----+---------------------+</text>
+    <text y="504"><tspan fill="#6c7086"> |</tspan><tspan fill="#89b4fa"> Binary    </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#89b4fa"> PIE </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#89b4fa"> RELRO </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#89b4fa"> Stack Canary </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#89b4fa"> NX  </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#89b4fa"> Compiler            </tspan><tspan fill="#6c7086">|</tspan></text>
+    <text y="520" fill="#6c7086"> +-----------+-----+-------+--------------+-----+---------------------+</text>
+    <text y="536"><tspan fill="#6c7086"> |</tspan><tspan fill="#cdd6f4"> busybox   </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1"> Yes </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1"> Yes   </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1"> Yes          </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1"> Yes </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> GCC 12.3.0          </tspan><tspan fill="#6c7086">|</tspan></text>
+    <text y="552"><tspan fill="#6c7086"> |</tspan><tspan fill="#cdd6f4"> dropbear  </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1"> Yes </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1"> Yes   </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1"> Yes          </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1"> Yes </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> GCC 12.3.0          </tspan><tspan fill="#6c7086">|</tspan></text>
+    <text y="568"><tspan fill="#6c7086"> |</tspan><tspan fill="#cdd6f4"> mosquitto </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1"> Yes </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#f38ba8"> No    </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1"> Yes          </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#a6e3a1"> Yes </tspan><tspan fill="#6c7086">|</tspan><tspan fill="#cdd6f4"> GCC 12.3.0          </tspan><tspan fill="#6c7086">|</tspan></text>
+    <text y="584" fill="#6c7086"> +-----------+-----+-------+--------------+-----+---------------------+</text>
+
+    <!-- Final output line -->
+    <text y="608" fill="#6c7086">  ---</text>
+    <text y="626"><tspan fill="#a6e3a1" font-weight="700">  SBOM written to sbom-spdx.json</tspan><tspan fill="#6c7086">  (SPDX 2.3, 8 packages)</tspan></text>
+
+  </g>
+</svg>
