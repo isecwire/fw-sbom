@@ -162,3 +162,109 @@ fw-sbom ./firmware/ --exclude test --exclude doc --exclude man
 }
 ```
 
+## Detection capabilities
+
+### Confidence scoring
+
+Each component is assigned a confidence score based on its detection method:
+
+| Method | Confidence | Description |
+|--------|-----------|-------------|
+| Package manager | 95% | From opkg/dpkg status files |
+| Filesystem meta | 90% | From os-release, openwrt_release |
+| Kernel config | 85% | From /boot/config-* |
+| ELF deep | 75% | From .comment/.dynamic sections |
+| ELF dynamic | 70% | From NEEDED library entries |
+| License file | 65% | From LICENSE/COPYING files |
+| Crypto constant | 60% | From algorithm constants |
+| String signature | 50% | From version strings in binaries |
+
+### Supported component signatures (54+)
+
+**Core embedded:** BusyBox, OpenSSL, U-Boot, zlib, curl, Dropbear, lighttpd, dnsmasq, SQLite, mbedTLS, wolfSSL, lwIP, FreeRTOS, libnl, libpcap, glibc, musl, uClibc, iptables, Linux kernel
+
+**Networking:** mosquitto, nginx, wpa_supplicant, hostapd, NetworkManager, iproute2, nftables, tcpdump, avahi, BlueZ
+
+**System services:** systemd, D-Bus, OpenSSH, bash, coreutils
+
+**Scripting runtimes:** Lua, Python, Node.js
+
+**Libraries:** libxml2, libpng, libjpeg, expat, ncurses, readline, jansson
+
+**OpenWrt-specific:** ubus, procd, netifd, libubox, libuci, uhttpd, swconfig
+
+**Debug tools:** strace, GDB, valgrind
+
+### VEX (Vulnerability Exploitability eXchange)
+
+With `--vex`, a companion OpenVEX document is generated that maps each known CVE hint to its component. By default, all CVE/component pairs are marked `under_investigation` since automated tools cannot confirm exploitability. Security teams can then update the VEX to mark entries as `not_affected`, `affected`, or `fixed`.
+
+### SBOM merge
+
+The `--merge` flag loads multiple SBOM files (SPDX or CycloneDX JSON), extracts components from each, deduplicates by name+version (keeping the higher-confidence entry), and outputs a single unified SBOM.
+
+### CPE / vulnerability enrichment
+
+With `--enrich`, each component is annotated with:
+- **CPE 2.3 identifier** mapped from a built-in dictionary of 50+ packages
+- **Known CVE hints** from a curated database of high-severity vulnerabilities for common embedded packages
+
+### SBOM diff
+
+The `--diff` mode compares two SBOM files (SPDX or CycloneDX) and reports:
+- Added components
+- Removed components
+- Version changes
+- Unchanged component count
+
+### Dependency graph
+
+The `--graph` mode outputs a DOT-format directed graph showing which ELF binaries link to which shared libraries. Render with Graphviz or any DOT-compatible tool.
+
+### ELF security hardening
+
+For each ELF binary, the tool checks and reports:
+- **PIE** (Position Independent Executable)
+- **RELRO** (RELocation Read-Only)
+- **Stack canary** (__stack_chk_fail)
+- **NX** (No eXecute / W^X)
+- **Compiler** version (from .comment section)
+
+## CRA compliance context
+
+Article 13 of the EU Cyber Resilience Act requires manufacturers to "identify and document vulnerabilities and components contained in the product, including by drawing up a software bill of materials." An SBOM must accompany the technical documentation of every product with digital elements placed on the EU market.
+
+`fw-sbom` automates the first step of this process: discovering what software is actually present in a firmware image, even when no build-system manifest is available. Its output can be fed directly into vulnerability databases (e.g. OSV, NVD) for known-vulnerability matching. The companion VEX document supports the vulnerability disclosure requirements of the CRA.
+
+## FAQ
+
+### What is an SBOM?
+
+**SBOM** (Software Bill of Materials) is a **list of all software components** inside a device. Like a list of ingredients on food packaging, but for software. Example: your gateway contains Linux kernel 5.15, BusyBox 1.36, OpenSSL 3.1, U-Boot 2023.10. The SBOM is a structured JSON document listing all of these with versions, hashes, and licenses.
+
+### What is CRA and why does it matter?
+
+**CRA** (EU Cyber Resilience Act) is a **new European Union law** (enforcement begins 2027). It **requires** every manufacturer of products with software (IoT devices, routers, gateways) to:
+- Provide an SBOM to customers
+- Monitor known vulnerabilities (CVEs) in their components
+- Patch security issues in a timely manner
+
+**Penalty for non-compliance:** up to €15 million or 2.5% of global revenue. This is not optional — it's law.
+
+fw-sbom generates compliant SBOMs automatically by scanning firmware images.
+
+### How is this used in practice?
+
+```bash
+# Generate SPDX SBOM from extracted firmware
+fw-sbom /path/to/firmware/ --format spdx --name "Gateway-Pro" --fw-version "2.1.0" --output sbom.json
+
+# Generate with vulnerability enrichment
+fw-sbom /path/to/firmware/ --format cyclonedx --enrich --output sbom-enriched.json
+```
+
+## License
+
+MIT -- see [LICENSE](LICENSE).
+
+Copyright (c) 2026 isecwire GmbH
