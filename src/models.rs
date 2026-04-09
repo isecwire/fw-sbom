@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// A single software component discovered in firmware.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -264,7 +264,6 @@ pub struct AnalysisStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json;
 
     #[test]
     fn component_creation_and_field_access() {
@@ -388,16 +387,31 @@ mod tests {
 
     #[test]
     fn detection_method_equality() {
-        assert_eq!(DetectionMethod::StringSignature, DetectionMethod::StringSignature);
+        assert_eq!(
+            DetectionMethod::StringSignature,
+            DetectionMethod::StringSignature
+        );
         assert_eq!(DetectionMethod::ElfDynamic, DetectionMethod::ElfDynamic);
-        assert_eq!(DetectionMethod::PackageManager, DetectionMethod::PackageManager);
-        assert_ne!(DetectionMethod::StringSignature, DetectionMethod::ElfDynamic);
+        assert_eq!(
+            DetectionMethod::PackageManager,
+            DetectionMethod::PackageManager
+        );
+        assert_ne!(
+            DetectionMethod::StringSignature,
+            DetectionMethod::ElfDynamic
+        );
     }
 
     #[test]
     fn detection_method_display() {
-        assert_eq!(format!("{}", DetectionMethod::StringSignature), "string-signature");
-        assert_eq!(format!("{}", DetectionMethod::PackageManager), "package-manager");
+        assert_eq!(
+            format!("{}", DetectionMethod::StringSignature),
+            "string-signature"
+        );
+        assert_eq!(
+            format!("{}", DetectionMethod::PackageManager),
+            "package-manager"
+        );
         assert_eq!(format!("{}", DetectionMethod::ElfDeep), "elf-deep");
     }
 

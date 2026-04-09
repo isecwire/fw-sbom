@@ -95,15 +95,10 @@ fn main() -> Result<()> {
 
     // -- Merge mode: combine multiple SBOMs and exit. --
     if let Some(ref merge_paths) = cli.merge_files {
-        let path_refs: Vec<&std::path::Path> =
-            merge_paths.iter().map(|p| p.as_path()).collect();
-        let merged_output = merge::merge_sbom_files(
-            &path_refs,
-            cli.format,
-            &cli.name,
-            &cli.fw_version,
-        )
-        .context("SBOM merge failed")?;
+        let path_refs: Vec<&std::path::Path> = merge_paths.iter().map(|p| p.as_path()).collect();
+        let merged_output =
+            merge::merge_sbom_files(&path_refs, cli.format, &cli.name, &cli.fw_version)
+                .context("SBOM merge failed")?;
 
         match cli.output {
             Some(ref path) => {
@@ -133,8 +128,7 @@ fn main() -> Result<()> {
             bail!("new SBOM file does not exist: {}", diff_path.display());
         }
 
-        let sbom_diff = diff::diff_sbom_files(&cli.input, diff_path)
-            .context("SBOM diff failed")?;
+        let sbom_diff = diff::diff_sbom_files(&cli.input, diff_path).context("SBOM diff failed")?;
 
         if !cli.quiet {
             display::print_diff(&sbom_diff);
@@ -186,11 +180,8 @@ fn main() -> Result<()> {
 
     // Print summary table (or machine-readable summary for --quiet).
     if !cli.quiet {
-        let stats = display::compute_stats(
-            &components,
-            result.elf_metadata.len(),
-            result.files_scanned,
-        );
+        let stats =
+            display::compute_stats(&components, result.elf_metadata.len(), result.files_scanned);
         display::print_summary_table(&components, &stats);
 
         // Print ELF security info if available.
@@ -219,10 +210,7 @@ fn main() -> Result<()> {
 
     // Output dependency graph if requested.
     if cli.graph {
-        let dot = graph::generate_dot_graph(
-            &result.dependency_edges,
-            &cli.name,
-        );
+        let dot = graph::generate_dot_graph(&result.dependency_edges, &cli.name);
         // Write graph to stderr summary, DOT to stdout.
         if !cli.quiet {
             let summary = graph::summarize_graph(&result.dependency_edges);
@@ -250,8 +238,7 @@ fn main() -> Result<()> {
     };
 
     // Render to the chosen format.
-    let output = sbom::generate(&doc, cli.format)
-        .context("SBOM generation failed")?;
+    let output = sbom::generate(&doc, cli.format).context("SBOM generation failed")?;
 
     // Validate SBOM if requested.
     if cli.validate {
@@ -274,8 +261,7 @@ fn main() -> Result<()> {
             // Generate VEX document alongside the SBOM if requested.
             if cli.vex {
                 let vex_path = vex::vex_output_path(path);
-                let vex_doc =
-                    vex::generate_vex_document(&components, &doc_id, &cli.name);
+                let vex_doc = vex::generate_vex_document(&components, &doc_id, &cli.name);
                 let vex_output = serde_json::to_string_pretty(&vex_doc)?;
                 fs::write(&vex_path, &vex_output)
                     .with_context(|| format!("writing VEX to {}", vex_path.display()))?;
@@ -293,8 +279,7 @@ fn main() -> Result<()> {
 
             // If VEX is requested without an output file, print VEX to stderr.
             if cli.vex {
-                let vex_doc =
-                    vex::generate_vex_document(&components, &doc_id, &cli.name);
+                let vex_doc = vex::generate_vex_document(&components, &doc_id, &cli.name);
                 let vex_output = serde_json::to_string_pretty(&vex_doc)?;
                 eprintln!("--- VEX Document ---");
                 eprintln!("{}", vex_output);
@@ -313,7 +298,14 @@ fn validate_sbom_json(json_str: &str, format: SbomFormat) -> Result<()> {
 
     match format {
         SbomFormat::Spdx => {
-            let required = ["spdxVersion", "dataLicense", "SPDXID", "name", "creationInfo", "packages"];
+            let required = [
+                "spdxVersion",
+                "dataLicense",
+                "SPDXID",
+                "name",
+                "creationInfo",
+                "packages",
+            ];
             for field in &required {
                 if doc.get(field).is_none() {
                     bail!("SPDX validation failed: missing required field '{}'", field);
@@ -322,20 +314,35 @@ fn validate_sbom_json(json_str: &str, format: SbomFormat) -> Result<()> {
             if doc["spdxVersion"].as_str() != Some("SPDX-2.3") {
                 bail!("SPDX validation warning: expected spdxVersion SPDX-2.3");
             }
-            eprintln!("  {} SPDX schema validation passed", console::style("OK").green().bold());
+            eprintln!(
+                "  {} SPDX schema validation passed",
+                console::style("OK").green().bold()
+            );
         }
         SbomFormat::CycloneDx => {
-            let required = ["bomFormat", "specVersion", "serialNumber", "metadata", "components"];
+            let required = [
+                "bomFormat",
+                "specVersion",
+                "serialNumber",
+                "metadata",
+                "components",
+            ];
             for field in &required {
                 if doc.get(field).is_none() {
-                    bail!("CycloneDX validation failed: missing required field '{}'", field);
+                    bail!(
+                        "CycloneDX validation failed: missing required field '{}'",
+                        field
+                    );
                 }
             }
             let spec = doc["specVersion"].as_str().unwrap_or("");
             if spec != "1.5" && spec != "1.6" {
                 bail!("CycloneDX validation warning: expected specVersion 1.5 or 1.6");
             }
-            eprintln!("  {} CycloneDX schema validation passed", console::style("OK").green().bold());
+            eprintln!(
+                "  {} CycloneDX schema validation passed",
+                console::style("OK").green().bold()
+            );
         }
     }
 

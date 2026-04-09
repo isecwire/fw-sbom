@@ -104,9 +104,10 @@ pub fn generate_vex_document(
             });
 
             if let Some(ref justification) = stmt.justification {
-                obj.as_object_mut()
-                    .unwrap()
-                    .insert("justification".to_string(), json!(justification.to_string()));
+                obj.as_object_mut().unwrap().insert(
+                    "justification".to_string(),
+                    json!(justification.to_string()),
+                );
             }
 
             if let Some(ref impact) = stmt.impact_statement {
@@ -257,8 +258,14 @@ mod tests {
         let doc = generate_vex_document(&[comp], "sbom-1", "fw");
         let stmt = &doc["statements"][0];
 
-        assert!(stmt["vulnerability"]["name"].as_str().unwrap().starts_with("CVE-"));
-        assert_eq!(stmt["products"][0]["identifiers"]["purl"], "pkg:generic/openssl@3.1.0");
+        assert!(stmt["vulnerability"]["name"]
+            .as_str()
+            .unwrap()
+            .starts_with("CVE-"));
+        assert_eq!(
+            stmt["products"][0]["identifiers"]["purl"],
+            "pkg:generic/openssl@3.1.0"
+        );
         assert_eq!(stmt["status"], "under_investigation");
     }
 

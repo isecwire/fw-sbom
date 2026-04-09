@@ -104,10 +104,7 @@ pub fn lookup_cpe(name: &str, version: Option<&str>) -> Option<String> {
         .find(|(pkg, _, _)| *pkg == lower)
         .map(|(_, vendor, product)| {
             let ver = version.unwrap_or("*");
-            format!(
-                "cpe:2.3:a:{}:{}:{}:*:*:*:*:*:*:*",
-                vendor, product, ver
-            )
+            format!("cpe:2.3:a:{}:{}:{}:*:*:*:*:*:*:*", vendor, product, ver)
         })
 }
 
@@ -177,10 +174,7 @@ mod tests {
     #[test]
     fn lookup_cpe_without_version() {
         let cpe = lookup_cpe("curl", None);
-        assert_eq!(
-            cpe,
-            Some("cpe:2.3:a:haxx:curl:*:*:*:*:*:*:*:*".to_string())
-        );
+        assert_eq!(cpe, Some("cpe:2.3:a:haxx:curl:*:*:*:*:*:*:*:*".to_string()));
     }
 
     #[test]

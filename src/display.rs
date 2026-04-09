@@ -114,11 +114,7 @@ pub fn print_summary_table(components: &[Component], stats: &AnalysisStats) {
     // Detection method breakdown.
     if !stats.by_method.is_empty() {
         let _ = writeln!(err);
-        let _ = writeln!(
-            err,
-            "  {}",
-            style("Detection method breakdown:").bold()
-        );
+        let _ = writeln!(err, "  {}", style("Detection method breakdown:").bold());
         let mut methods: Vec<_> = stats.by_method.iter().collect();
         methods.sort_by(|a, b| b.1.cmp(a.1));
         for (method, count) in methods {
@@ -129,11 +125,7 @@ pub fn print_summary_table(components: &[Component], stats: &AnalysisStats) {
     // License breakdown.
     if !stats.by_license.is_empty() {
         let _ = writeln!(err);
-        let _ = writeln!(
-            err,
-            "  {}",
-            style("License breakdown:").bold()
-        );
+        let _ = writeln!(err, "  {}", style("License breakdown:").bold());
         let mut licenses: Vec<_> = stats.by_license.iter().collect();
         licenses.sort_by(|a, b| b.1.cmp(a.1));
         for (license, count) in licenses {
@@ -154,11 +146,7 @@ pub fn print_elf_security_table(elf_metadata: &[ElfMetadata]) {
     let mut err = stderr.lock();
 
     let _ = writeln!(err);
-    let _ = writeln!(
-        err,
-        "  {}",
-        style("ELF binary security hardening:").bold()
-    );
+    let _ = writeln!(err, "  {}", style("ELF binary security hardening:").bold());
 
     let mut table = Table::new();
     table.set_content_arrangement(ContentArrangement::Dynamic);
@@ -172,11 +160,7 @@ pub fn print_elf_security_table(elf_metadata: &[ElfMetadata]) {
     ]);
 
     for meta in elf_metadata.iter().take(20) {
-        let short_path = meta
-            .path
-            .rsplit('/')
-            .next()
-            .unwrap_or(&meta.path);
+        let short_path = meta.path.rsplit('/').next().unwrap_or(&meta.path);
 
         table.add_row(vec![
             Cell::new(short_path),
@@ -216,11 +200,7 @@ pub fn print_kernel_config(config: &KernelSecurityConfig) {
     let mut err = stderr.lock();
 
     let _ = writeln!(err);
-    let _ = writeln!(
-        err,
-        "  {}",
-        style("Kernel security configuration:").bold()
-    );
+    let _ = writeln!(err, "  {}", style("Kernel security configuration:").bold());
 
     let items = [
         ("Stack Protector", config.stack_protector),
@@ -250,11 +230,7 @@ pub fn print_diff(diff: &SbomDiff) {
     let mut err = stderr.lock();
 
     let _ = writeln!(err);
-    let _ = writeln!(
-        err,
-        "  {}",
-        style("SBOM Comparison Results").bold().cyan()
-    );
+    let _ = writeln!(err, "  {}", style("SBOM Comparison Results").bold().cyan());
     let _ = writeln!(
         err,
         "  {} added, {} removed, {} changed, {} unchanged",
@@ -295,11 +271,7 @@ pub fn print_diff(diff: &SbomDiff) {
 
     if !diff.version_changed.is_empty() {
         let _ = writeln!(err);
-        let _ = writeln!(
-            err,
-            "  {}",
-            style("Version changes:").yellow().bold()
-        );
+        let _ = writeln!(err, "  {}", style("Version changes:").yellow().bold());
         for change in &diff.version_changed {
             let _ = writeln!(
                 err,
@@ -316,7 +288,11 @@ pub fn print_diff(diff: &SbomDiff) {
 }
 
 /// Build analysis statistics from components.
-pub fn compute_stats(components: &[Component], elf_count: usize, files_scanned: usize) -> AnalysisStats {
+pub fn compute_stats(
+    components: &[Component],
+    elf_count: usize,
+    files_scanned: usize,
+) -> AnalysisStats {
     let mut by_method: HashMap<String, usize> = HashMap::new();
     let mut by_license: HashMap<String, usize> = HashMap::new();
 

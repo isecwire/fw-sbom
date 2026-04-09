@@ -15,7 +15,7 @@ pub fn generate(doc: &SbomDocument, format: SbomFormat) -> Result<String> {
 
 /// Generate SPDX 2.3 JSON.
 fn generate_spdx(doc: &SbomDocument) -> Value {
-    let spdx_id = format!("SPDXRef-DOCUMENT");
+    let spdx_id = "SPDXRef-DOCUMENT".to_string();
     let doc_namespace = format!(
         "https://spdx.org/spdxdocs/{}-{}-{}",
         doc.name, doc.version, doc.document_id
@@ -120,11 +120,7 @@ fn spdx_package(c: &Component, idx: usize) -> Value {
 
 /// Generate CycloneDX 1.5 JSON.
 fn generate_cyclonedx(doc: &SbomDocument) -> Value {
-    let components: Vec<Value> = doc
-        .components
-        .iter()
-        .map(cyclonedx_component)
-        .collect();
+    let components: Vec<Value> = doc.components.iter().map(cyclonedx_component).collect();
 
     json!({
         "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
@@ -313,7 +309,10 @@ mod tests {
         assert_eq!(v["dataLicense"], "CC0-1.0");
         assert_eq!(v["SPDXID"], "SPDXRef-DOCUMENT");
         assert_eq!(v["name"], "test-firmware");
-        assert!(v["documentNamespace"].as_str().unwrap().starts_with("https://spdx.org/spdxdocs/"));
+        assert!(v["documentNamespace"]
+            .as_str()
+            .unwrap()
+            .starts_with("https://spdx.org/spdxdocs/"));
         assert!(v["creationInfo"].is_object());
         assert!(v["packages"].is_array());
         assert!(v["relationships"].is_array());
@@ -328,8 +327,12 @@ mod tests {
         let info = &v["creationInfo"];
         assert_eq!(info["created"], "2026-01-01T00:00:00Z");
         let creators = info["creators"].as_array().unwrap();
-        assert!(creators.iter().any(|c| c.as_str().unwrap().contains("fw-sbom")));
-        assert!(creators.iter().any(|c| c.as_str().unwrap().contains("isecwire")));
+        assert!(creators
+            .iter()
+            .any(|c| c.as_str().unwrap().contains("fw-sbom")));
+        assert!(creators
+            .iter()
+            .any(|c| c.as_str().unwrap().contains("isecwire")));
     }
 
     #[test]
@@ -417,7 +420,9 @@ mod tests {
         let output = generate(&doc, SbomFormat::Spdx).unwrap();
         let v: Value = serde_json::from_str(&output).unwrap();
 
-        let comment = v["packages"][0]["annotations"][0]["comment"].as_str().unwrap();
+        let comment = v["packages"][0]["annotations"][0]["comment"]
+            .as_str()
+            .unwrap();
         assert!(comment.contains("confidence"));
     }
 
@@ -497,7 +502,9 @@ mod tests {
 
         let props = v["components"][0]["properties"].as_array().unwrap();
         assert!(props.iter().any(|p| p["name"] == "fw-sbom:confidence"));
-        assert!(props.iter().any(|p| p["name"] == "fw-sbom:detection-method"));
+        assert!(props
+            .iter()
+            .any(|p| p["name"] == "fw-sbom:detection-method"));
     }
 
     #[test]

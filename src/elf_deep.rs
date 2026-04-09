@@ -12,14 +12,14 @@ use goblin::elf::program_header::PT_GNU_RELRO;
 use goblin::elf::Elf;
 use memmap2::Mmap;
 
-use crate::models::{Component, DependencyEdge, DetectionMethod, ElfMetadata, method_confidence};
+use crate::models::{method_confidence, Component, DependencyEdge, DetectionMethod, ElfMetadata};
+
+/// Result of a deep ELF analysis: the binary's metadata plus any components
+/// and dependency edges discovered while inspecting its sections and symbols.
+pub type ElfAnalysis = (ElfMetadata, Vec<Component>, Vec<DependencyEdge>);
 
 /// Perform deep ELF analysis on a file, returning metadata and any components discovered.
-pub fn analyze_elf_deep(
-    path: &Path,
-    rel_path: &str,
-    hash: &str,
-) -> Result<Option<(ElfMetadata, Vec<Component>, Vec<DependencyEdge>)>> {
+pub fn analyze_elf_deep(path: &Path, rel_path: &str, hash: &str) -> Result<Option<ElfAnalysis>> {
     let file = match fs::File::open(path) {
         Ok(f) => f,
         Err(_) => return Ok(None),
@@ -121,7 +121,7 @@ pub fn analyze_elf_deep(
 fn extract_soname(elf: &Elf) -> Option<String> {
     if let Some(ref dynamic) = elf.dynamic {
         for dyn_entry in &dynamic.dyns {
-            if dyn_entry.d_tag as u64 == DT_SONAME as u64 {
+            if dyn_entry.d_tag == DT_SONAME {
                 if let Some(name) = elf.dynstrtab.get_at(dyn_entry.d_val as usize) {
                     return Some(name.to_string());
                 }
@@ -135,7 +135,7 @@ fn extract_soname(elf: &Elf) -> Option<String> {
 fn extract_dynamic_str(elf: &Elf, _mmap: &[u8], tag: u64) -> Option<String> {
     if let Some(ref dynamic) = elf.dynamic {
         for dyn_entry in &dynamic.dyns {
-            if dyn_entry.d_tag as u64 == tag {
+            if dyn_entry.d_tag == tag {
                 if let Some(name) = elf.dynstrtab.get_at(dyn_entry.d_val as usize) {
                     return Some(name.to_string());
                 }
@@ -238,9 +238,9 @@ fn extract_version_from_comment(comment: &str) -> Option<String> {
     let mut best: Option<String> = None;
     for word in comment.split_whitespace() {
         // A version-like token: starts with a digit, contains a dot.
-        if word.chars().next().map_or(false, |c| c.is_ascii_digit()) && word.contains('.') {
-            let trimmed = word
-                .trim_end_matches(|c: char| !c.is_alphanumeric() && c != '.' && c != '-');
+        if word.chars().next().is_some_and(|c| c.is_ascii_digit()) && word.contains('.') {
+            let trimmed =
+                word.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '.' && c != '-');
             if trimmed.len() >= 3 {
                 best = Some(trimmed.to_string());
             }

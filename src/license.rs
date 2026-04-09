@@ -138,10 +138,7 @@ const LICENSE_PATTERNS: &[LicensePattern] = &[
     },
     LicensePattern {
         spdx_id: "LGPL-2.1-or-later",
-        patterns: &[
-            "GNU Lesser General Public License",
-            "LGPL-2.1-or-later",
-        ],
+        patterns: &["GNU Lesser General Public License", "LGPL-2.1-or-later"],
     },
     LicensePattern {
         spdx_id: "BSD-2-Clause",
@@ -153,17 +150,11 @@ const LICENSE_PATTERNS: &[LicensePattern] = &[
     },
     LicensePattern {
         spdx_id: "BSD-3-Clause",
-        patterns: &[
-            "BSD-3-Clause",
-            "3-clause BSD",
-        ],
+        patterns: &["BSD-3-Clause", "3-clause BSD"],
     },
     LicensePattern {
         spdx_id: "Zlib",
-        patterns: &[
-            "zlib License",
-            "This software is provided 'as-is'",
-        ],
+        patterns: &["zlib License", "This software is provided 'as-is'"],
     },
     LicensePattern {
         spdx_id: "ISC",
@@ -174,27 +165,20 @@ const LICENSE_PATTERNS: &[LicensePattern] = &[
     },
     LicensePattern {
         spdx_id: "MPL-2.0",
-        patterns: &[
-            "Mozilla Public License Version 2.0",
-            "MPL-2.0",
-        ],
+        patterns: &["Mozilla Public License Version 2.0", "MPL-2.0"],
     },
     LicensePattern {
         spdx_id: "EPL-2.0",
-        patterns: &[
-            "Eclipse Public License",
-            "EPL-2.0",
-        ],
+        patterns: &["Eclipse Public License", "EPL-2.0"],
     },
 ];
 
 /// Check if a file path looks like a license file.
 pub fn is_license_file(path: &Path) -> bool {
-    let filename = path
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or("");
-    LICENSE_FILENAMES.iter().any(|&n| n.eq_ignore_ascii_case(filename))
+    let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+    LICENSE_FILENAMES
+        .iter()
+        .any(|&n| n.eq_ignore_ascii_case(filename))
 }
 
 /// Scan a file for license information.
@@ -244,7 +228,7 @@ fn extract_spdx_header(content: &str) -> Option<String> {
     for line in content.lines().take(30) {
         if let Some(idx) = line.find("SPDX-License-Identifier:") {
             let rest = &line[idx + "SPDX-License-Identifier:".len()..];
-            let spdx = rest.trim().trim_end_matches(|c: char| c == '*' || c == '/');
+            let spdx = rest.trim().trim_end_matches(['*', '/']);
             if !spdx.is_empty() {
                 return Some(spdx.trim().to_string());
             }

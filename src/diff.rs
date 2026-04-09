@@ -55,10 +55,18 @@ fn parse_spdx_to_doc(value: &serde_json::Value) -> Result<SbomDocument> {
         for pkg in pkgs {
             let pkg_name = pkg["name"].as_str().unwrap_or("unknown");
             let version = pkg["versionInfo"].as_str().and_then(|v| {
-                if v == "NOASSERTION" { None } else { Some(v.to_string()) }
+                if v == "NOASSERTION" {
+                    None
+                } else {
+                    Some(v.to_string())
+                }
             });
             let license = pkg["licenseConcluded"].as_str().and_then(|v| {
-                if v == "NOASSERTION" { None } else { Some(v.to_string()) }
+                if v == "NOASSERTION" {
+                    None
+                } else {
+                    Some(v.to_string())
+                }
             });
 
             components.push(crate::models::Component {
@@ -66,7 +74,8 @@ fn parse_spdx_to_doc(value: &serde_json::Value) -> Result<SbomDocument> {
                 version,
                 sha256: String::new(),
                 license,
-                purl: pkg.get("externalRefs")
+                purl: pkg
+                    .get("externalRefs")
                     .and_then(|refs| refs.as_array())
                     .and_then(|refs| refs.first())
                     .and_then(|r| r["referenceLocator"].as_str())
@@ -108,7 +117,8 @@ fn parse_cyclonedx_to_doc(value: &serde_json::Value) -> Result<SbomDocument> {
         for comp in comps {
             let comp_name = comp["name"].as_str().unwrap_or("unknown");
             let version = comp["version"].as_str().map(|s| s.to_string());
-            let license = comp.get("licenses")
+            let license = comp
+                .get("licenses")
                 .and_then(|l| l.as_array())
                 .and_then(|l| l.first())
                 .and_then(|l| l["license"]["id"].as_str())
@@ -344,8 +354,14 @@ mod tests {
         let diff = diff_sbom_documents(&old, &new);
         assert_eq!(diff.version_changed.len(), 1);
         assert_eq!(diff.version_changed[0].name, "openssl");
-        assert_eq!(diff.version_changed[0].old_version.as_deref(), Some("3.0.0"));
-        assert_eq!(diff.version_changed[0].new_version.as_deref(), Some("3.1.0"));
+        assert_eq!(
+            diff.version_changed[0].old_version.as_deref(),
+            Some("3.0.0")
+        );
+        assert_eq!(
+            diff.version_changed[0].new_version.as_deref(),
+            Some("3.1.0")
+        );
     }
 
     #[test]

@@ -125,7 +125,11 @@ pub fn summarize_graph(edges: &[DependencyEdge]) -> String {
     if !bin_counts.is_empty() {
         out.push_str("\nBinaries with most dependencies:\n");
         for (bin, count) in bin_counts.iter().take(10) {
-            out.push_str(&format!("  {:40} ({} libraries)\n", short_label(bin), count));
+            out.push_str(&format!(
+                "  {:40} ({} libraries)\n",
+                short_label(bin),
+                count
+            ));
         }
     }
 

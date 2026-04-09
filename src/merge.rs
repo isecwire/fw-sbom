@@ -18,8 +18,8 @@ use crate::sbom;
 /// Load an SBOM file and extract components from it.
 /// Supports both SPDX 2.3 and CycloneDX 1.5/1.6 JSON formats.
 pub fn load_sbom_components(path: &Path) -> Result<Vec<Component>> {
-    let content =
-        std::fs::read_to_string(path).with_context(|| format!("reading SBOM: {}", path.display()))?;
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("reading SBOM: {}", path.display()))?;
 
     let doc: Value = serde_json::from_str(&content)
         .with_context(|| format!("parsing JSON from {}", path.display()))?;

@@ -12,8 +12,7 @@ use tempfile::TempDir;
 /// Path to the compiled binary (built by `cargo test`).
 fn binary_path() -> std::path::PathBuf {
     // `cargo test` puts the binary in target/debug/
-    let mut path = std::env::current_exe()
-        .expect("failed to get current exe path");
+    let mut path = std::env::current_exe().expect("failed to get current exe path");
     // Walk up from the test binary to the target/debug directory.
     path.pop(); // remove the test binary name
     path.pop(); // remove `deps/`
@@ -30,8 +29,10 @@ fn create_fake_firmware() -> TempDir {
     fs::create_dir_all(&bin_dir).unwrap();
     let mut f = fs::File::create(bin_dir.join("busybox")).unwrap();
     f.write_all(b"\x7fELF\x00\x00\x00\x00").unwrap(); // fake ELF header (will fail parse but that's ok)
-    f.write_all(b"\x00\x00BusyBox v1.36.1 (2024-06-10 15:00:00 UTC)\x00").unwrap();
-    f.write_all(b"\x00\x00OpenSSL 3.1.4 21 Nov 2023\x00").unwrap();
+    f.write_all(b"\x00\x00BusyBox v1.36.1 (2024-06-10 15:00:00 UTC)\x00")
+        .unwrap();
+    f.write_all(b"\x00\x00OpenSSL 3.1.4 21 Nov 2023\x00")
+        .unwrap();
 
     // A file containing an opkg status metadata.
     let opkg_dir = dir.path().join("var/lib/opkg");
@@ -44,7 +45,11 @@ fn create_fake_firmware() -> TempDir {
     .unwrap();
 
     // A plain text file with no signatures.
-    fs::write(dir.path().join("README"), "This is a test firmware image.\n").unwrap();
+    fs::write(
+        dir.path().join("README"),
+        "This is a test firmware image.\n",
+    )
+    .unwrap();
 
     dir
 }
@@ -55,9 +60,12 @@ fn binary_produces_spdx_output() {
     let output = Command::new(binary_path())
         .args([
             firmware.path().to_str().unwrap(),
-            "--format", "spdx",
-            "--name", "test-fw",
-            "--fw-version", "2.0.0",
+            "--format",
+            "spdx",
+            "--name",
+            "test-fw",
+            "--fw-version",
+            "2.0.0",
             "--quiet",
         ])
         .output()
@@ -84,7 +92,10 @@ fn binary_produces_spdx_output() {
     );
 
     // Check that busybox was found.
-    let names: Vec<&str> = packages.iter().map(|p| p["name"].as_str().unwrap()).collect();
+    let names: Vec<&str> = packages
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
     assert!(
         names.contains(&"busybox"),
         "should detect busybox, found: {:?}",
@@ -98,8 +109,10 @@ fn binary_produces_cyclonedx_output() {
     let output = Command::new(binary_path())
         .args([
             firmware.path().to_str().unwrap(),
-            "--format", "cyclonedx",
-            "--name", "test-fw",
+            "--format",
+            "cyclonedx",
+            "--name",
+            "test-fw",
             "--quiet",
         ])
         .output()
@@ -137,8 +150,10 @@ fn binary_writes_output_to_file() {
     let result = Command::new(binary_path())
         .args([
             firmware.path().to_str().unwrap(),
-            "--format", "spdx",
-            "--output", output_file.to_str().unwrap(),
+            "--format",
+            "spdx",
+            "--output",
+            output_file.to_str().unwrap(),
             "--quiet",
         ])
         .output()
@@ -152,7 +167,8 @@ fn binary_writes_output_to_file() {
 
     assert!(output_file.exists(), "output file should be created");
     let content = fs::read_to_string(&output_file).unwrap();
-    let v: serde_json::Value = serde_json::from_str(&content).expect("file should contain valid JSON");
+    let v: serde_json::Value =
+        serde_json::from_str(&content).expect("file should contain valid JSON");
     assert_eq!(v["spdxVersion"], "SPDX-2.3");
 }
 
@@ -175,7 +191,8 @@ fn binary_detects_opkg_packages() {
     let output = Command::new(binary_path())
         .args([
             firmware.path().to_str().unwrap(),
-            "--format", "spdx",
+            "--format",
+            "spdx",
             "--quiet",
         ])
         .output()
@@ -187,7 +204,10 @@ fn binary_detects_opkg_packages() {
     let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
 
     let packages = v["packages"].as_array().unwrap();
-    let names: Vec<&str> = packages.iter().map(|p| p["name"].as_str().unwrap()).collect();
+    let names: Vec<&str> = packages
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
 
     assert!(
         names.contains(&"dropbear"),
@@ -207,8 +227,10 @@ fn empty_directory_produces_valid_sbom_with_no_components() {
     let output = Command::new(binary_path())
         .args([
             dir.path().to_str().unwrap(),
-            "--format", "spdx",
-            "--name", "empty-fw",
+            "--format",
+            "spdx",
+            "--name",
+            "empty-fw",
             "--quiet",
         ])
         .output()
@@ -229,7 +251,8 @@ fn binary_enrich_adds_cpe() {
     let output = Command::new(binary_path())
         .args([
             firmware.path().to_str().unwrap(),
-            "--format", "spdx",
+            "--format",
+            "spdx",
             "--enrich",
             "--quiet",
         ])
@@ -253,7 +276,10 @@ fn binary_enrich_adds_cpe() {
             .map(|refs| refs.iter().any(|r| r["referenceType"] == "cpe23Type"))
             .unwrap_or(false)
     });
-    assert!(has_cpe, "enriched SBOM should have at least one CPE reference");
+    assert!(
+        has_cpe,
+        "enriched SBOM should have at least one CPE reference"
+    );
 }
 
 #[test]
@@ -268,8 +294,10 @@ fn binary_diff_mode() {
     let result1 = Command::new(binary_path())
         .args([
             firmware.path().to_str().unwrap(),
-            "--format", "spdx",
-            "--output", sbom1_path.to_str().unwrap(),
+            "--format",
+            "spdx",
+            "--output",
+            sbom1_path.to_str().unwrap(),
             "--quiet",
         ])
         .output()
@@ -279,8 +307,10 @@ fn binary_diff_mode() {
     let result2 = Command::new(binary_path())
         .args([
             firmware.path().to_str().unwrap(),
-            "--format", "spdx",
-            "--output", sbom2_path.to_str().unwrap(),
+            "--format",
+            "spdx",
+            "--output",
+            sbom2_path.to_str().unwrap(),
             "--quiet",
         ])
         .output()
@@ -291,7 +321,8 @@ fn binary_diff_mode() {
     let diff_result = Command::new(binary_path())
         .args([
             sbom1_path.to_str().unwrap(),
-            "--diff", sbom2_path.to_str().unwrap(),
+            "--diff",
+            sbom2_path.to_str().unwrap(),
             "--quiet",
         ])
         .output()
@@ -304,8 +335,8 @@ fn binary_diff_mode() {
     );
 
     let stdout = String::from_utf8(diff_result.stdout).unwrap();
-    let v: serde_json::Value = serde_json::from_str(&stdout)
-        .expect("diff output should be valid JSON");
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout).expect("diff output should be valid JSON");
     // Same SBOMs should have zero changes.
     assert_eq!(v["added"].as_array().unwrap().len(), 0);
     assert_eq!(v["removed"].as_array().unwrap().len(), 0);
@@ -334,8 +365,10 @@ fn binary_exclude_pattern() {
     let output = Command::new(binary_path())
         .args([
             dir.path().to_str().unwrap(),
-            "--format", "spdx",
-            "--exclude", "skipthis",
+            "--format",
+            "spdx",
+            "--exclude",
+            "skipthis",
             "--quiet",
         ])
         .output()
@@ -347,9 +380,15 @@ fn binary_exclude_pattern() {
     let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
 
     let packages = v["packages"].as_array().unwrap();
-    let names: Vec<&str> = packages.iter().map(|p| p["name"].as_str().unwrap()).collect();
+    let names: Vec<&str> = packages
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
     assert!(names.contains(&"busybox"), "should find busybox");
-    assert!(!names.contains(&"openssl"), "should exclude openssl in skipthis dir");
+    assert!(
+        !names.contains(&"openssl"),
+        "should exclude openssl in skipthis dir"
+    );
 }
 
 #[test]
@@ -364,8 +403,10 @@ fn binary_min_confidence_filter() {
     let output = Command::new(binary_path())
         .args([
             dir.path().to_str().unwrap(),
-            "--format", "spdx",
-            "--min-confidence", "0.99",
+            "--format",
+            "spdx",
+            "--min-confidence",
+            "0.99",
             "--quiet",
         ])
         .output()
@@ -387,11 +428,7 @@ fn binary_graph_mode() {
     let firmware = create_fake_firmware();
 
     let output = Command::new(binary_path())
-        .args([
-            firmware.path().to_str().unwrap(),
-            "--graph",
-            "--quiet",
-        ])
+        .args([firmware.path().to_str().unwrap(), "--graph", "--quiet"])
         .output()
         .expect("failed to execute fw-sbom --graph");
 

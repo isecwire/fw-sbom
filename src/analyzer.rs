@@ -14,8 +14,8 @@ use walkdir::WalkDir;
 use crate::elf_deep;
 use crate::license;
 use crate::models::{
-    Component, DependencyEdge, DetectionMethod, DistroInfo, ElfMetadata,
-    KernelSecurityConfig, method_confidence,
+    method_confidence, Component, DependencyEdge, DetectionMethod, DistroInfo, ElfMetadata,
+    KernelSecurityConfig,
 };
 
 /// Known embedded package signatures: (search bytes, package name, license).
@@ -318,20 +318,16 @@ const SIGNATURES: &[Signature] = &[
 
 /// AES S-box first 16 bytes (used to detect AES implementations).
 const AES_SBOX_PREFIX: &[u8] = &[
-    0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5,
-    0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
+    0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
 ];
 
 /// SHA-256 initial hash values (first 4 words).
 const SHA256_INIT: &[u8] = &[
-    0x6a, 0x09, 0xe6, 0x67, 0xbb, 0x67, 0xae, 0x85,
-    0x3c, 0x6e, 0xf3, 0x72, 0xa5, 0x4f, 0xf5, 0x3a,
+    0x6a, 0x09, 0xe6, 0x67, 0xbb, 0x67, 0xae, 0x85, 0x3c, 0x6e, 0xf3, 0x72, 0xa5, 0x4f, 0xf5, 0x3a,
 ];
 
 /// SHA-256 round constants (first 8 bytes: K[0] = 0x428a2f98, K[1] = 0x71374491).
-const SHA256_K_PREFIX: &[u8] = &[
-    0x42, 0x8a, 0x2f, 0x98, 0x71, 0x37, 0x44, 0x91,
-];
+const SHA256_K_PREFIX: &[u8] = &[0x42, 0x8a, 0x2f, 0x98, 0x71, 0x37, 0x44, 0x91];
 
 /// Map well-known shared library names to package names and licenses.
 fn known_library(soname: &str) -> Option<(&'static str, &'static str)> {
@@ -346,9 +342,7 @@ fn known_library(soname: &str) -> Option<(&'static str, &'static str)> {
         "libpthread.so" | "libc.so" | "libdl.so" | "libm.so" | "librt.so" => {
             Some(("glibc", "LGPL-2.1-or-later"))
         }
-        "libmbedtls.so" | "libmbedcrypto.so" | "libmbedx509.so" => {
-            Some(("mbedtls", "Apache-2.0"))
-        }
+        "libmbedtls.so" | "libmbedcrypto.so" | "libmbedx509.so" => Some(("mbedtls", "Apache-2.0")),
         "libwolfssl.so" => Some(("wolfssl", "GPL-2.0-or-later")),
         "libxml2.so" => Some(("libxml2", "MIT")),
         "libpng16.so" | "libpng12.so" | "libpng.so" => Some(("libpng", "Libpng")),
@@ -413,9 +407,9 @@ impl FirmwareAnalyzer {
     /// Check if a path should be excluded.
     fn is_excluded(&self, path: &Path) -> bool {
         let path_str = path.to_string_lossy();
-        self.exclude_patterns.iter().any(|pat| {
-            path_str.contains(pat.as_str())
-        })
+        self.exclude_patterns
+            .iter()
+            .any(|pat| path_str.contains(pat.as_str()))
     }
 
     /// Run the full analysis pipeline and return discovered components.
@@ -479,8 +473,8 @@ impl FirmwareAnalyzer {
             if let Some(mut ctrl_components) = self.check_opkg_control(path)? {
                 for c in &mut ctrl_components {
                     let key = (c.name.clone(), c.file_path.clone());
-                    if !seen.contains_key(&key) {
-                        seen.insert(key, true);
+                    if let std::collections::hash_map::Entry::Vacant(e) = seen.entry(key) {
+                        e.insert(true);
                         components.push(c.clone());
                     }
                 }
@@ -490,8 +484,8 @@ impl FirmwareAnalyzer {
             if let Some(mut pkg_components) = self.check_package_metadata(path)? {
                 for c in &mut pkg_components {
                     let key = (c.name.clone(), c.file_path.clone());
-                    if !seen.contains_key(&key) {
-                        seen.insert(key, true);
+                    if let std::collections::hash_map::Entry::Vacant(e) = seen.entry(key) {
+                        e.insert(true);
                         components.push(c.clone());
                     }
                 }
@@ -552,15 +546,12 @@ impl FirmwareAnalyzer {
             }
 
             // String-signature scanning.
-            if let Ok(Some(sig_components)) =
-                self.scan_signatures(path, &hash, &rel_path)
-            {
+            if let Ok(Some(sig_components)) = self.scan_signatures(path, &hash, &rel_path) {
                 local_components.extend(sig_components);
             }
 
             // Crypto constant scanning.
-            if let Ok(Some(crypto_components)) =
-                self.scan_crypto_constants(path, &hash, &rel_path)
+            if let Ok(Some(crypto_components)) = self.scan_crypto_constants(path, &hash, &rel_path)
             {
                 local_components.extend(crypto_components);
             }
@@ -585,8 +576,8 @@ impl FirmwareAnalyzer {
         // Merge parallel results with sequential results, deduplicating.
         for c in par_found {
             let key = (c.name.clone(), c.file_path.clone());
-            if !seen.contains_key(&key) {
-                seen.insert(key, true);
+            if let std::collections::hash_map::Entry::Vacant(e) = seen.entry(key) {
+                e.insert(true);
                 components.push(c);
             }
         }
@@ -671,10 +662,7 @@ impl FirmwareAnalyzer {
                 }
                 let candidate = &window[ver_start..i];
                 // Must contain at least one dot and be reasonable length.
-                if candidate.contains(&b'.')
-                    && candidate.len() >= 3
-                    && candidate.len() <= 32
-                {
+                if candidate.contains(&b'.') && candidate.len() >= 3 && candidate.len() <= 32 {
                     if let Ok(s) = std::str::from_utf8(candidate) {
                         // Trim trailing punctuation.
                         let s = s.trim_end_matches(|c: char| !c.is_alphanumeric());
@@ -774,8 +762,7 @@ impl FirmwareAnalyzer {
         }
 
         // Check for SHA-256 constants.
-        if find_bytes(&data, SHA256_INIT).is_some()
-            || find_bytes(&data, SHA256_K_PREFIX).is_some()
+        if find_bytes(&data, SHA256_INIT).is_some() || find_bytes(&data, SHA256_K_PREFIX).is_some()
         {
             results.push(Component {
                 name: "sha256-implementation".to_string(),
@@ -890,9 +877,9 @@ impl FirmwareAnalyzer {
                 // End of stanza -- emit component.
                 if let Some(name) = current_name.take() {
                     let version = current_version.take();
-                    let license = current_license.take().or_else(|| {
-                        license::lookup_package_license(&name).map(|s| s.to_string())
-                    });
+                    let license = current_license
+                        .take()
+                        .or_else(|| license::lookup_package_license(&name).map(|s| s.to_string()));
                     let purl = make_purl(&name, version.as_deref());
                     results.push(Component {
                         name: name.clone(),
@@ -922,9 +909,9 @@ impl FirmwareAnalyzer {
         // Handle last stanza without trailing newline.
         if let Some(name) = current_name.take() {
             let version = current_version.take();
-            let license = current_license.take().or_else(|| {
-                license::lookup_package_license(&name).map(|s| s.to_string())
-            });
+            let license = current_license
+                .take()
+                .or_else(|| license::lookup_package_license(&name).map(|s| s.to_string()));
             let purl = make_purl(&name, version.as_deref());
             results.push(Component {
                 name,
@@ -955,8 +942,17 @@ impl FirmwareAnalyzer {
         }
 
         // Check parent is "info" and grandparent is "opkg".
-        let parent = path.parent().and_then(|p| p.file_name()).and_then(|f| f.to_str()).unwrap_or("");
-        let grandparent = path.parent().and_then(|p| p.parent()).and_then(|p| p.file_name()).and_then(|f| f.to_str()).unwrap_or("");
+        let parent = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|f| f.to_str())
+            .unwrap_or("");
+        let grandparent = path
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.file_name())
+            .and_then(|f| f.to_str())
+            .unwrap_or("");
 
         if parent != "info" || grandparent != "opkg" {
             return Ok(None);
@@ -985,9 +981,8 @@ impl FirmwareAnalyzer {
         }
 
         if let Some(pkg_name) = name {
-            let license = lic.or_else(|| {
-                license::lookup_package_license(&pkg_name).map(|s| s.to_string())
-            });
+            let license =
+                lic.or_else(|| license::lookup_package_license(&pkg_name).map(|s| s.to_string()));
             let purl = make_purl(&pkg_name, version.as_deref());
             Ok(Some(vec![Component {
                 name: pkg_name,
@@ -1015,7 +1010,11 @@ impl FirmwareAnalyzer {
         }
 
         // Verify path looks right (under /etc).
-        let parent = path.parent().and_then(|p| p.file_name()).and_then(|f| f.to_str()).unwrap_or("");
+        let parent = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|f| f.to_str())
+            .unwrap_or("");
         if parent != "etc" {
             return Ok(None);
         }
@@ -1061,9 +1060,17 @@ impl FirmwareAnalyzer {
 
         // Check for /boot/config-* or /proc/config.gz (as extracted).
         let is_kernel_config = filename.starts_with("config-")
-            && path.parent().and_then(|p| p.file_name()).and_then(|f| f.to_str()) == Some("boot");
+            && path
+                .parent()
+                .and_then(|p| p.file_name())
+                .and_then(|f| f.to_str())
+                == Some("boot");
         let is_proc_config = filename == "config.gz"
-            && path.parent().and_then(|p| p.file_name()).and_then(|f| f.to_str()) == Some("proc");
+            && path
+                .parent()
+                .and_then(|p| p.file_name())
+                .and_then(|f| f.to_str())
+                == Some("proc");
 
         // Also check for plain "config" under a kernel-related directory.
         if !is_kernel_config && !is_proc_config {
@@ -1095,7 +1102,9 @@ impl FirmwareAnalyzer {
         for line in content.lines() {
             let line = line.trim();
             match line {
-                "CONFIG_STACKPROTECTOR=y" | "CONFIG_CC_STACKPROTECTOR=y" | "CONFIG_STACKPROTECTOR_STRONG=y" => {
+                "CONFIG_STACKPROTECTOR=y"
+                | "CONFIG_CC_STACKPROTECTOR=y"
+                | "CONFIG_STACKPROTECTOR_STRONG=y" => {
                     config.stack_protector = Some(true);
                 }
                 "# CONFIG_STACKPROTECTOR is not set" | "# CONFIG_CC_STACKPROTECTOR is not set" => {
@@ -1164,9 +1173,7 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() || haystack.len() < needle.len() {
         return None;
     }
-    haystack
-        .windows(needle.len())
-        .position(|w| w == needle)
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 #[cfg(test)]
@@ -1227,7 +1234,10 @@ mod tests {
 
     #[test]
     fn make_purl_with_version() {
-        assert_eq!(make_purl("openssl", Some("3.1.0")), "pkg:generic/openssl@3.1.0");
+        assert_eq!(
+            make_purl("openssl", Some("3.1.0")),
+            "pkg:generic/openssl@3.1.0"
+        );
     }
 
     #[test]
@@ -1352,15 +1362,25 @@ mod tests {
 
         let components = result.expect("should detect multiple components");
         let names: Vec<&str> = components.iter().map(|c| c.name.as_str()).collect();
-        assert!(names.contains(&"curl"), "should detect curl, found: {:?}", names);
-        assert!(names.contains(&"zlib"), "should detect zlib, found: {:?}", names);
+        assert!(
+            names.contains(&"curl"),
+            "should detect curl, found: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"zlib"),
+            "should detect zlib, found: {:?}",
+            names
+        );
     }
 
     #[test]
     fn scan_returns_none_for_file_without_signatures() {
         let dir = temp_dir_with_file("random.bin", b"nothing recognizable at all in here xyz");
         let analyzer = FirmwareAnalyzer::new(dir.path());
-        let hash = analyzer.sha256_file(&dir.path().join("random.bin")).unwrap();
+        let hash = analyzer
+            .sha256_file(&dir.path().join("random.bin"))
+            .unwrap();
         let result = analyzer
             .scan_signatures(&dir.path().join("random.bin"), &hash, "random.bin")
             .unwrap();
@@ -1421,7 +1441,10 @@ mod tests {
             .iter()
             .filter(|c| c.name == "busybox" && c.version.as_deref() == Some("1.36.1"))
             .count();
-        assert_eq!(busybox_count, 1, "busybox should be deduplicated to one entry");
+        assert_eq!(
+            busybox_count, 1,
+            "busybox should be deduplicated to one entry"
+        );
     }
 
     #[test]
@@ -1454,10 +1477,16 @@ mod tests {
         let dir = TempDir::new().unwrap();
 
         let path_z = dir.path().join("libz.bin");
-        fs::File::create(&path_z).unwrap().write_all(b"\x00zlib 1.3.1 deflate \x00").unwrap();
+        fs::File::create(&path_z)
+            .unwrap()
+            .write_all(b"\x00zlib 1.3.1 deflate \x00")
+            .unwrap();
 
         let path_c = dir.path().join("curl.bin");
-        fs::File::create(&path_c).unwrap().write_all(b"\x00libcurl 8.4.0\x00").unwrap();
+        fs::File::create(&path_c)
+            .unwrap()
+            .write_all(b"\x00libcurl 8.4.0\x00")
+            .unwrap();
 
         let analyzer = FirmwareAnalyzer::new(dir.path());
         let components = analyzer.analyze().unwrap();
@@ -1571,15 +1600,20 @@ License: MIT
         let dir = TempDir::new().unwrap();
 
         let path1 = dir.path().join("keep.bin");
-        fs::File::create(&path1).unwrap().write_all(b"\x00BusyBox v1.36.1\x00").unwrap();
+        fs::File::create(&path1)
+            .unwrap()
+            .write_all(b"\x00BusyBox v1.36.1\x00")
+            .unwrap();
 
         let skip_dir = dir.path().join("skip_me");
         fs::create_dir_all(&skip_dir).unwrap();
         let path2 = skip_dir.join("hidden.bin");
-        fs::File::create(&path2).unwrap().write_all(b"\x00OpenSSL 3.1.4\x00").unwrap();
+        fs::File::create(&path2)
+            .unwrap()
+            .write_all(b"\x00OpenSSL 3.1.4\x00")
+            .unwrap();
 
-        let analyzer = FirmwareAnalyzer::new(dir.path())
-            .with_excludes(vec!["skip_me".to_string()]);
+        let analyzer = FirmwareAnalyzer::new(dir.path()).with_excludes(vec!["skip_me".to_string()]);
         let components = analyzer.analyze().unwrap();
 
         let names: Vec<&str> = components.iter().map(|c| c.name.as_str()).collect();
@@ -1593,13 +1627,18 @@ License: MIT
     fn min_confidence_filters_components() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("test.bin");
-        fs::File::create(&path).unwrap().write_all(b"\x00BusyBox v1.36.1\x00").unwrap();
+        fs::File::create(&path)
+            .unwrap()
+            .write_all(b"\x00BusyBox v1.36.1\x00")
+            .unwrap();
 
         // With high min confidence, string signatures should be filtered out.
-        let analyzer = FirmwareAnalyzer::new(dir.path())
-            .with_min_confidence(0.99);
+        let analyzer = FirmwareAnalyzer::new(dir.path()).with_min_confidence(0.99);
         let components = analyzer.analyze().unwrap();
-        assert!(components.is_empty(), "high confidence threshold should filter all string-signature results");
+        assert!(
+            components.is_empty(),
+            "high confidence threshold should filter all string-signature results"
+        );
     }
 
     // ---- expanded signature tests ----
@@ -1608,7 +1647,9 @@ License: MIT
     fn scan_detects_mosquitto() {
         let dir = temp_dir_with_file("mosquitto.bin", b"\x00mosquitto 2.0.18\x00");
         let analyzer = FirmwareAnalyzer::new(dir.path());
-        let hash = analyzer.sha256_file(&dir.path().join("mosquitto.bin")).unwrap();
+        let hash = analyzer
+            .sha256_file(&dir.path().join("mosquitto.bin"))
+            .unwrap();
         let result = analyzer
             .scan_signatures(&dir.path().join("mosquitto.bin"), &hash, "mosquitto.bin")
             .unwrap();
@@ -1632,7 +1673,9 @@ License: MIT
     fn scan_detects_systemd() {
         let dir = temp_dir_with_file("systemd.bin", b"\x00systemd 255\x00");
         let analyzer = FirmwareAnalyzer::new(dir.path());
-        let hash = analyzer.sha256_file(&dir.path().join("systemd.bin")).unwrap();
+        let hash = analyzer
+            .sha256_file(&dir.path().join("systemd.bin"))
+            .unwrap();
         let result = analyzer
             .scan_signatures(&dir.path().join("systemd.bin"), &hash, "systemd.bin")
             .unwrap();
