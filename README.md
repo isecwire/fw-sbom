@@ -1,5 +1,9 @@
 # fw-sbom
 
+[![CI](https://github.com/isecwire/fw-sbom/actions/workflows/ci.yml/badge.svg)](https://github.com/isecwire/fw-sbom/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
+
 ![fw-sbom screenshot](assets/screenshot.svg)
 
 Firmware Software Bill of Materials (SBOM) generator. Scans extracted firmware images for software components and produces machine-readable SBOM documents in **SPDX 2.3** or **CycloneDX 1.6** JSON format.
